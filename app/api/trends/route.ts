@@ -1,5 +1,5 @@
-import { cors, handleOptions } from "/Users/talley/Documents/fairpowerohio.com/lib/cors";
-import { sampleTrends } from "/Users/talley/Documents/fairpowerohio.com/data/sample";
+import { cors, handleOptions } from "../../../lib/cors";
+import { sampleTrends } from "../../../data/sample";
 
 export async function OPTIONS(request: Request) {
   return handleOptions(request);
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const headers = cors(origin);
   headers.set("Content-Type", "application/json; charset=utf-8");
 
-  const data = sampleTrends[key];
+  const data = (sampleTrends as Record<string, any[]>)[key];
   if (!data) {
     return new Response(JSON.stringify({ error: "No data for given params." }), { status: 404, headers });
   }
