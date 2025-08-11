@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { cors, handleOptions } from "../../../lib/cors";
 import { sampleTrends } from "../../../data/sample";
 
