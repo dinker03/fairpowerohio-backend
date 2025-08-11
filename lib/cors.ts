@@ -1,6 +1,6 @@
 // lib/cors.ts
 const ALLOWED = new Set([
-  "https://YOURPROJECT.webflow.io",       // Webflow staging site (replace!)
+  "https://api-staging.fairenergyohio.com/api/summary",       // Webflow staging site (replace!)
   "https://www.fairenergyohio.com"        // Your future Webflow custom domain
 ]);
 
