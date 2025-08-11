@@ -1,5 +1,5 @@
-import { cors, handleOptions } from "/Users/talley/Documents/fairpowerohio.com/lib/cors";
-import { summary } from "/Users/talley/Documents/fairpowerohio.com/data/sample";
+import { cors, handleOptions } from "../../../lib/cors";
+import { summary } from "../../../data/sample";
 
 export async function OPTIONS(request: Request) {
   return handleOptions(request);
