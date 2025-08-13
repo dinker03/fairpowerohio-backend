@@ -1,138 +1,105 @@
-export const runtime = "nodejs"; // pg needs Node, not Edge
+export const runtime = "nodejs";
 
-import { Pool } from "pg";
 import { cors, handleOptions } from "../../../lib/cors";
+import { Pool } from "pg";
 
-const pooledUrl =
-  process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
-const pool = new Pool({ connectionString: pooledUrl });
-
-export async function OPTIONS(req: Request) {
-  return handleOptions(req);
+export async function OPTIONS(request: Request) {
+  return handleOptions(request);
 }
 
-export async function GET(req: Request) {
-  const origin = req.headers.get("origin");
-  const headers = cors(origin);
-  headers.set("Content-Type", "application/json; charset=utf-8");
-  // cache at the edge for 5m; allow stale while revalidating for a day
-  headers.set(
-    "Cache-Control",
-    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
-  );
+const pooledUrl = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
+const pool = new Pool({ connectionString: pooledUrl });
 
-  // For now we support a single utility; add more later as we ingest them
-  const utility = "aep-ohio";
-  const termMonths = 12;
+type Row = { date: string; ptc: number; best_fixed: number; median_fixed: number };
 
-  try {
-    // 1) latest “market day” we have in offers for this utility/term
-    const { rows: d1 } = await pool.query(
-      `
-      SELECT MAX(date) as max_day
+async function runSummary(dateCol: "date" | "day", utility: string, term: number) {
+  // NOTE: we inject the column name (validated) into the SQL strings
+  const latestOffersSQL = `
+    WITH latest AS (
+      SELECT MAX(${dateCol}) AS d
       FROM offers
       WHERE utility = $1 AND term_months = $2
-      `,
-      [utility, termMonths]
-    );
-    const latestOffersDay: string | null = d1[0]?.max_day ?? null;
+    )
+    SELECT
+      to_char(o.${dateCol}, 'YYYY-MM-DD') AS date,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY o.rate_cents_per_kwh)::float AS median_fixed,
+      MIN(o.rate_cents_per_kwh)::float AS best_fixed
+    FROM offers o, latest
+    WHERE o.utility = $1 AND o.term_months = $2 AND o.${dateCol} = latest.d
+    GROUP BY o.${dateCol}
+    ORDER BY o.${dateCol} ASC
+  `;
 
-    // 2) best & median fixed for that day (if we have it)
-    let bestFixed: number | null = null;
-    let medianFixed: number | null = null;
-
-    if (latestOffersDay) {
-      const { rows: d2 } = await pool.query(
-        `
-        SELECT
-          MIN(rate_cents_per_kwh)::float AS best_fixed,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rate_cents_per_kwh)::float AS median_fixed
-        FROM offers
-        WHERE utility = $1 AND term_months = $2 AND date = $3
-        `,
-        [utility, termMonths, latestOffersDay]
-      );
-      bestFixed = d2[0]?.best_fixed ?? null;
-      medianFixed = d2[0]?.median_fixed ?? null;
-    }
-
-    // 3) current PTC and “days since last change”
-    const { rows: p1 } = await pool.query(
-      `
-      SELECT date, cents_per_kwh::float AS ptc
+  const latestPtcSQL = `
+    WITH latest AS (
+      SELECT MAX(${dateCol}) AS d
       FROM ptc
       WHERE utility = $1
-      ORDER BY date DESC
-      LIMIT 1
-      `,
-      [utility]
-    );
+    )
+    SELECT
+      to_char(p.${dateCol}, 'YYYY-MM-DD') AS date,
+      p.cents_per_kwh::float AS ptc
+    FROM ptc p, latest
+    WHERE p.utility = $1 AND p.${dateCol} = latest.d
+  `;
 
-    const ptc = p1[0]?.ptc ?? null;
-    const ptcDate: string | null = p1[0]?.date ?? null;
+  const [{ rows: offerRows }, { rows: ptcRows }] = await Promise.all([
+    pool.query(latestOffersSQL, [utility, term]),
+    pool.query(latestPtcSQL, [utility]),
+  ]);
 
-    // Find when PTC last changed (latest row where value differs from previous)
-    // If we have window funcs available (Postgres 14+), this works great:
-    const { rows: p2 } = await pool.query(
-      `
-      WITH diffs AS (
-        SELECT
-          date,
-          cents_per_kwh,
-          LAG(cents_per_kwh) OVER (ORDER BY date) AS prev_ptc
-        FROM ptc
-        WHERE utility = $1
-        ORDER BY date
-      )
-      SELECT date
-      FROM diffs
-      WHERE prev_ptc IS DISTINCT FROM cents_per_kwh
-      ORDER BY date DESC
-      LIMIT 1
-      `,
-      [utility]
-    );
+  // Join PT C on date (same day)
+  const ptcByDate = new Map(ptcRows.map((r) => [r.date, r.ptc]));
+  const points: Row[] = offerRows.map((r) => ({
+    date: r.date,
+    best_fixed: r.best_fixed,
+    median_fixed: r.median_fixed,
+    ptc: ptcByDate.get(r.date) ?? null,
+  })) as any;
 
-    const lastChangeDate: string | null = p2[0]?.date ?? ptcDate ?? latestOffersDay;
+  return points;
+}
 
-    // updatedAt = the freshest thing we have
-    const updatedAt = [latestOffersDay, ptcDate]
-      .filter(Boolean)
-      .sort() // ISO dates sort lexicographically
-      .pop() as string | undefined;
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const utility = searchParams.get("utility") || "aep-ohio";
+  const term = Number(searchParams.get("term") || "12");
+  const debug = searchParams.get("debug") === "1";
 
-    // daysSinceLastChange (fallback to 0 if we’re missing dates)
-    let daysSinceLastChange = 0;
-    if (ptcDate && lastChangeDate) {
-      const dNow = new Date(ptcDate);
-      const dPrev = new Date(lastChangeDate);
-      daysSinceLastChange = Math.max(
-        0,
-        Math.round((+dNow - +dPrev) / (1000 * 60 * 60 * 24))
-      );
+  const origin = request.headers.get("origin");
+  const headers = cors(origin);
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=86400");
+
+  try {
+    // Try with `date`
+    let points: Row[];
+    try {
+      points = await runSummary("date", utility, term);
+    } catch (e: any) {
+      if (String(e.message).includes('column "date" does not exist')) {
+        // Retry with `day`
+        points = await runSummary("day", utility, term);
+      } else {
+        throw e;
+      }
     }
 
-    const payload = {
-      updatedAt: updatedAt ?? new Date().toISOString().slice(0, 10),
-      utilities: [
-        {
-          utility,
-          commodity: "electric",
-          customerClass: "residential",
-          bestFixedCentsPerKwh: bestFixed,
-          medianFixedCentsPerKwh: medianFixed,
-          ptcCentsPerKwh: ptc,
-          daysSinceLastChange,
-        },
-      ],
-    };
+    return new Response(JSON.stringify({
+      utility,
+      term: String(term),
+      points: points.map(p => ({
+        date: p.date,
+        ptc: p.ptc,
+        bestFixed: p.best_fixed,
+        medianFixed: p.median_fixed,
+      })),
+    }), { status: 200, headers });
 
-    return new Response(JSON.stringify(payload), { status: 200, headers });
   } catch (err: any) {
     console.error("summary error:", err?.message || err);
-    return new Response(
-      JSON.stringify({ error: "failed to build summary" }),
-      { status: 500, headers }
-    );
+    const body = debug ? { error: "failed to build summary", detail: err?.message || String(err) }
+                       : { error: "failed to build summary" };
+    return new Response(JSON.stringify(body), { status: 500, headers });
   }
 }
