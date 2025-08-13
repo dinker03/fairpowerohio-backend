@@ -7,13 +7,30 @@ export async function OPTIONS(request: Request) {
   return handleOptions(request);
 }
 
-const pooledUrl = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
+// Prefer pooled URL; fall back to unpooled if needed
+const pooledUrl =
+  process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
+
 const pool = new Pool({ connectionString: pooledUrl });
 
-type Row = { date: string; ptc: number; best_fixed: number; median_fixed: number };
+type Row = {
+  date: string;
+  ptc: number | null;
+  best_fixed: number;
+  median_fixed: number;
+};
 
-async function runSummary(dateCol: "date" | "day", utility: string, term: number) {
-  // NOTE: we inject the column name (validated) into the SQL strings
+/**
+ * Build summary rows for the most-recent day that has data.
+ * We support either a real "date" column or a "day" column,
+ * chosen by the `dateCol` argument.
+ */
+async function runSummary(
+  dateCol: "date" | "day",
+  utility: string,
+  term: number
+): Promise<Row[]> {
+  // latest offers (min + median) for that day
   const latestOffersSQL = `
     WITH latest AS (
       SELECT MAX(${dateCol}) AS d
@@ -30,6 +47,7 @@ async function runSummary(dateCol: "date" | "day", utility: string, term: number
     ORDER BY o.${dateCol} ASC
   `;
 
+  // latest PTC for that day (same day join)
   const latestPtcSQL = `
     WITH latest AS (
       SELECT MAX(${dateCol}) AS d
@@ -48,33 +66,37 @@ async function runSummary(dateCol: "date" | "day", utility: string, term: number
     pool.query(latestPtcSQL, [utility]),
   ]);
 
-  // Join PT C on date (same day)
-  const ptcByDate = new Map(ptcRows.map((r) => [r.date, r.ptc]));
-  const points: Row[] = offerRows.map((r) => ({
-    date: r.date,
-    best_fixed: r.best_fixed,
-    median_fixed: r.median_fixed,
+  const ptcByDate = new Map<string, number>(
+    ptcRows.map((r: any) => [r.date as string, r.ptc as number])
+  );
+
+  const points: Row[] = offerRows.map((r: any) => ({
+    date: r.date as string,
+    best_fixed: r.best_fixed as number,
+    median_fixed: r.median_fixed as number,
     ptc: ptcByDate.get(r.date) ?? null,
-  })) as any;
+  }));
 
   return points;
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const utility = searchParams.get("utility") || "aep-ohio";
-  const term = Number(searchParams.get("term") || "12");
-  const debug = searchParams.get("debug") === "1";
+  const utility = searchParams.get("utility") ?? "aep-ohio";
+  const term = parseInt(searchParams.get("term") ?? "12", 10);
 
   const origin = request.headers.get("origin");
   const headers = cors(origin);
   headers.set("Content-Type", "application/json; charset=utf-8");
-  headers.set("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=86400");
+  headers.set(
+    "Cache-Control",
+    "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
+  );
 
-    try {
+  try {
     let points: Row[];
 
-    // Try with `date` first; if *anything* fails, retry with `day`
+    // Try with `date`; if it fails (e.g., column doesn’t exist), retry with `day`
     try {
       points = await runSummary("date", utility, term);
     } catch (e: any) {
@@ -82,41 +104,25 @@ export async function GET(request: Request) {
       points = await runSummary("day", utility, term);
     }
 
-    return new Response(JSON.stringify({
-      utility,
-      term: String(term),
-      points: points.map(p => ({
-        date: p.date,
-        ptc: p.ptc,
-        bestFixed: p.best_fixed,
-        medianFixed: p.median_fixed,
-      })),
-    }), { status: 200, headers });
-
+    return new Response(
+      JSON.stringify({
+        utility,
+        term: String(term),
+        points: points.map((p) => ({
+          date: p.date,
+          ptc: p.ptc,
+          bestFixed: p.best_fixed,
+          medianFixed: p.median_fixed,
+        })),
+      }),
+      { status: 200, headers }
+    );
   } catch (err: any) {
     console.error("summary error:", err?.message || err);
-    const body = (searchParams.get("debug") === "1")
-      ? { error: "failed to build summary", detail: err?.message || String(err) }
-      : { error: "failed to build summary" };
-    return new Response(JSON.stringify(body), { status: 500, headers });
-  }
-}
-
-    return new Response(JSON.stringify({
-      utility,
-      term: String(term),
-      points: points.map(p => ({
-        date: p.date,
-        ptc: p.ptc,
-        bestFixed: p.best_fixed,
-        medianFixed: p.median_fixed,
-      })),
-    }), { status: 200, headers });
-
-  } catch (err: any) {
-    console.error("summary error:", err?.message || err);
-    const body = debug ? { error: "failed to build summary", detail: err?.message || String(err) }
-                       : { error: "failed to build summary" };
+    const body =
+      searchParams.get("debug") === "1"
+        ? { error: "failed to build summary", detail: err?.message || String(err) }
+        : { error: "failed to build summary" };
     return new Response(JSON.stringify(body), { status: 500, headers });
   }
 }
