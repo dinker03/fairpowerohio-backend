@@ -71,19 +71,36 @@ export async function GET(request: Request) {
   headers.set("Content-Type", "application/json; charset=utf-8");
   headers.set("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=86400");
 
-  try {
-    // Try with `date`
+    try {
     let points: Row[];
+
+    // Try with `date` first; if *anything* fails, retry with `day`
     try {
       points = await runSummary("date", utility, term);
     } catch (e: any) {
-      if (String(e.message).includes('column "date" does not exist')) {
-        // Retry with `day`
-        points = await runSummary("day", utility, term);
-      } else {
-        throw e;
-      }
+      console.warn("summary(date) failed, retrying with day:", e?.message || e);
+      points = await runSummary("day", utility, term);
     }
+
+    return new Response(JSON.stringify({
+      utility,
+      term: String(term),
+      points: points.map(p => ({
+        date: p.date,
+        ptc: p.ptc,
+        bestFixed: p.best_fixed,
+        medianFixed: p.median_fixed,
+      })),
+    }), { status: 200, headers });
+
+  } catch (err: any) {
+    console.error("summary error:", err?.message || err);
+    const body = (searchParams.get("debug") === "1")
+      ? { error: "failed to build summary", detail: err?.message || String(err) }
+      : { error: "failed to build summary" };
+    return new Response(JSON.stringify(body), { status: 500, headers });
+  }
+}
 
     return new Response(JSON.stringify({
       utility,
