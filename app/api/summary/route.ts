@@ -96,7 +96,6 @@ async function findClosestPtcOnOrBefore(
   offersDay: string
 ): Promise<number | null> {
   for (const [table, utilCol, dateExpr, valueCol] of PTC_TRIES) {
-    // Validate parts separately and assemble with table alias "p."
     const util = `p.${idPart(utilCol)}`;
     const dateE = `p.${idPart(dateExpr)}`;
     const val = `p.${idPart(valueCol)}`;
@@ -132,37 +131,45 @@ export async function GET(request: Request) {
   try {
     const latest = await findLatestOffersDay(utility, term);
     if (!latest) {
-      return new Response(JSON.stringify({ utility, term: String(term), points: [] }), {
-        status: 200,
-        headers,
-      });
+      // legacy shape with empty utilities array
+      return new Response(JSON.stringify({
+        updatedAt: new Date().toISOString().slice(0,10),
+        utilities: []
+      }), { status: 200, headers });
     }
 
     const { day, utilCol, dateExpr } = latest;
-
     const stats = await getOfferStatsForDay(utility, term, utilCol, dateExpr, day);
     const ptc = await findClosestPtcOnOrBefore(utility, day);
 
+    // === Legacy-compatible payload ===
     const payload = {
-      utility,
-      term: String(term),
-      points: [
-        {
-          date: day,
-          ptc: ptc ?? null,
-          bestFixed: stats.best ?? null,
-          medianFixed: stats.median ?? null,
-        },
-      ],
+      updatedAt: day,
+      utilities: [{
+        utility,
+        commodity: "electric",
+        customerClass: "residential",
+        bestFixedCentsPerKwh: stats.best ?? null,
+        medianFixedCentsPerKwh: stats.median ?? null,
+        ptcCentsPerKwh: ptc ?? null,
+        // If you want, we can compute this later from ptc history:
+        daysSinceLastChange: null
+      }],
+      // convenience extras for future use (won't break old code)
+      current: {
+        date: day,
+        bestFixed: stats.best ?? null,
+        medianFixed: stats.median ?? null,
+        ptc: ptc ?? null
+      }
     };
 
     return new Response(JSON.stringify(payload), { status: 200, headers });
   } catch (err: any) {
     console.error("summary error:", err?.message || err);
-    const detail = err?.message || String(err);
     const debug = searchParams.get("debug") === "1";
     return new Response(
-      JSON.stringify(debug ? { error: "failed to build summary", detail } : { error: "failed to build summary" }),
+      JSON.stringify(debug ? { error: "failed to build summary", detail: err?.message || String(err) } : { error: "failed to build summary" }),
       { status: 500, headers }
     );
   }
