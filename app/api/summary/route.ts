@@ -1,89 +1,90 @@
 export const runtime = "nodejs";
 
-import { cors, handleOptions } from "../../../lib/cors";
 import { Pool } from "pg";
+import { cors, handleOptions } from "../../../lib/cors";
 
 export async function OPTIONS(request: Request) {
   return handleOptions(request);
 }
 
-// Prefer pooled URL; fall back to unpooled if needed
 const pooledUrl =
   process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
-
 const pool = new Pool({ connectionString: pooledUrl });
 
-type Row = {
+type Point = {
   date: string;
+  best_fixed: number | null;
+  median_fixed: number | null;
   ptc: number | null;
-  best_fixed: number;
-  median_fixed: number;
 };
 
-/**
- * Build summary rows for the most-recent day that has data.
- * We support either a real "date" column or a "day" column,
- * chosen by the `dateCol` argument.
- */
-async function runSummary(
-  dateCol: "date" | "day",
-  utility: string,
-  term: number
-): Promise<Row[]> {
-  // latest offers (min + median) for that day
-  const latestOffersSQL = `
+function qIdent(id: string) {
+  // very small whitelist guard for dynamic identifiers
+  if (!/^[a-z_]+(?:::[a-z_]+)?$/i.test(id)) throw new Error("invalid identifier");
+  return id;
+}
+
+async function tryOffersSummary(opts: {
+  utilityCol: "utility" | "utility_id";
+  dateExpr: "date" | "day" | "captured_at::date";
+  utilityValue: string;
+  termMonths: number;
+}): Promise<{ date: string; best_fixed: number | null; median_fixed: number | null }[]> {
+  const { utilityCol, dateExpr, utilityValue, termMonths } = opts;
+
+  const sql = `
     WITH latest AS (
-      SELECT MAX(${dateCol}) AS d
+      SELECT MAX(${qIdent(dateExpr)}) AS d
       FROM offers
-      WHERE utility = $1 AND term_months = $2
+      WHERE ${qIdent(utilityCol)} = $1 AND term_months = $2
     )
     SELECT
-      to_char(o.${dateCol}, 'YYYY-MM-DD') AS date,
-      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY o.rate_cents_per_kwh)::float AS median_fixed,
-      MIN(o.rate_cents_per_kwh)::float AS best_fixed
+      to_char(o.${qIdent(dateExpr)}, 'YYYY-MM-DD') AS date,
+      MIN(o.rate_cents_per_kwh)::float AS best_fixed,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY o.rate_cents_per_kwh)::float AS median_fixed
     FROM offers o, latest
-    WHERE o.utility = $1 AND o.term_months = $2 AND o.${dateCol} = latest.d
-    GROUP BY o.${dateCol}
-    ORDER BY o.${dateCol} ASC
+    WHERE o.${qIdent(utilityCol)} = $1
+      AND o.term_months = $2
+      AND o.${qIdent(dateExpr)} = latest.d
+    GROUP BY o.${qIdent(dateExpr)}
+    ORDER BY o.${qIdent(dateExpr)} ASC
   `;
 
-  // latest PTC for that day (same day join)
-  const latestPtcSQL = `
+  const { rows } = await pool.query(sql, [utilityValue, termMonths]);
+  return rows;
+}
+
+async function tryPtcForDay(opts: {
+  table: "ptc" | "ptc_snapshots";
+  utilityCol: "utility" | "utility_id";
+  dateExpr: "date" | "day" | "captured_at::date";
+  valueCol: "cents_per_kwh" | "ptc_cents_per_kwh";
+  utilityValue: string;
+}): Promise<{ date: string; ptc: number }[]> {
+  const { table, utilityCol, dateExpr, valueCol, utilityValue } = opts;
+
+  const sql = `
     WITH latest AS (
-      SELECT MAX(${dateCol}) AS d
-      FROM ptc
-      WHERE utility = $1
+      SELECT MAX(${qIdent(dateExpr)}) AS d
+      FROM ${table}
+      WHERE ${qIdent(utilityCol)} = $1
     )
     SELECT
-      to_char(p.${dateCol}, 'YYYY-MM-DD') AS date,
-      p.cents_per_kwh::float AS ptc
-    FROM ptc p, latest
-    WHERE p.utility = $1 AND p.${dateCol} = latest.d
+      to_char(p.${qIdent(dateExpr)}, 'YYYY-MM-DD') AS date,
+      ${qIdent(`p.${valueCol}`)}::float AS ptc
+    FROM ${table} p, latest
+    WHERE p.${qIdent(utilityCol)} = $1
+      AND p.${qIdent(dateExpr)} = latest.d
   `;
 
-  const [{ rows: offerRows }, { rows: ptcRows }] = await Promise.all([
-    pool.query(latestOffersSQL, [utility, term]),
-    pool.query(latestPtcSQL, [utility]),
-  ]);
-
-  const ptcByDate = new Map<string, number>(
-    ptcRows.map((r: any) => [r.date as string, r.ptc as number])
-  );
-
-  const points: Row[] = offerRows.map((r: any) => ({
-    date: r.date as string,
-    best_fixed: r.best_fixed as number,
-    median_fixed: r.median_fixed as number,
-    ptc: ptcByDate.get(r.date) ?? null,
-  }));
-
-  return points;
+  const { rows } = await pool.query(sql, [utilityValue]);
+  return rows;
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const utility = searchParams.get("utility") ?? "aep-ohio";
-  const term = parseInt(searchParams.get("term") ?? "12", 10);
+  const utilityParam = (searchParams.get("utility") || "aep-ohio").toLowerCase();
+  const term = parseInt(searchParams.get("term") || "12", 10);
 
   const origin = request.headers.get("origin");
   const headers = cors(origin);
@@ -93,20 +94,95 @@ export async function GET(request: Request) {
     "public, max-age=0, s-maxage=300, stale-while-revalidate=86400"
   );
 
-  try {
-    let points: Row[];
+  // Try offers in this order (utility column, date expression)
+  const offerAttempts: Array<["utility" | "utility_id", "date" | "day" | "captured_at::date"]> = [
+    ["utility", "date"],
+    ["utility", "day"],
+    ["utility", "captured_at::date"],
+    ["utility_id", "date"],
+    ["utility_id", "day"],
+    ["utility_id", "captured_at::date"],
+  ];
 
-    // Try with `date`; if it fails (e.g., column doesn’t exist), retry with `day`
-    try {
-      points = await runSummary("date", utility, term);
-    } catch (e: any) {
-      console.warn("summary(date) failed, retrying with day:", e?.message || e);
-      points = await runSummary("day", utility, term);
+  // Try ptc in this order (table, utility col, date expr, value col)
+  const ptcAttempts: Array<["ptc" | "ptc_snapshots", "utility" | "utility_id", "date" | "day" | "captured_at::date", "cents_per_kwh" | "ptc_cents_per_kwh"]> =
+    [
+      ["ptc", "utility", "date", "cents_per_kwh"],
+      ["ptc", "utility", "day", "cents_per_kwh"],
+      ["ptc", "utility", "captured_at::date", "cents_per_kwh"],
+      ["ptc", "utility_id", "date", "cents_per_kwh"],
+      ["ptc", "utility_id", "day", "cents_per_kwh"],
+      ["ptc", "utility_id", "captured_at::date", "cents_per_kwh"],
+      ["ptc_snapshots", "utility", "date", "ptc_cents_per_kwh"],
+      ["ptc_snapshots", "utility", "day", "ptc_cents_per_kwh"],
+      ["ptc_snapshots", "utility", "captured_at::date", "ptc_cents_per_kwh"],
+      ["ptc_snapshots", "utility_id", "date", "ptc_cents_per_kwh"],
+      ["ptc_snapshots", "utility_id", "day", "ptc_cents_per_kwh"],
+      ["ptc_snapshots", "utility_id", "captured_at::date", "ptc_cents_per_kwh"],
+    ];
+
+  try {
+    // 1) OFFERS: find best + median for the latest day that has data
+    let offersRows: Array<{ date: string; best_fixed: number | null; median_fixed: number | null }> =
+      [];
+    let offersErr: any = null;
+
+    for (const [utilCol, dateExpr] of offerAttempts) {
+      try {
+        const rows = await tryOffersSummary({
+          utilityCol: utilCol,
+          dateExpr,
+          utilityValue: utilityParam,
+          termMonths: term,
+        });
+        offersRows = rows;
+        offersErr = null;
+        if (rows.length) break;
+      } catch (e: any) {
+        offersErr = e;
+        // try next variant
+      }
     }
+
+    if (!offersRows.length && offersErr) throw offersErr;
+
+    // 2) PTC: fetch the most recent day (matching the offers day where possible)
+    let ptcRows: Array<{ date: string; ptc: number }> = [];
+    let ptcErr: any = null;
+
+    for (const [table, utilCol, dateExpr, valueCol] of ptcAttempts) {
+      try {
+        const rows = await tryPtcForDay({
+          table,
+          utilityCol: utilCol,
+          dateExpr,
+          valueCol,
+          utilityValue: utilityParam,
+        });
+        ptcRows = rows;
+        ptcErr = null;
+        if (rows.length) break;
+      } catch (e: any) {
+        ptcErr = e;
+        // try next variant
+      }
+    }
+    if (!ptcRows.length && ptcErr) {
+      // not fatal — we can still return offers without ptc
+      console.warn("summary: no PTC row found via known variants:", ptcErr?.message || ptcErr);
+    }
+
+    const ptcByDate = new Map(ptcRows.map((r) => [r.date, r.ptc]));
+    const points: Point[] = offersRows.map((r) => ({
+      date: r.date,
+      best_fixed: r.best_fixed ?? null,
+      median_fixed: r.median_fixed ?? null,
+      ptc: ptcByDate.get(r.date) ?? null,
+    }));
 
     return new Response(
       JSON.stringify({
-        utility,
+        utility: utilityParam,
         term: String(term),
         points: points.map((p) => ({
           date: p.date,
