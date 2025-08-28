@@ -1,28 +1,29 @@
-const DEFAULT_ALLOWED = ["*"]; // For MVP, allow all. Tighten later to your domains.
+// lib/cors.ts
+
+// Allow only your sites (add/remove as needed)
+const ALLOWLIST = new Set<string>([
+  "https://scotts-test-site-bf43b4.webflow.io", // ← replace with your actual Webflow staging origin
+  "https://www.fairenergyohio.com", // ← add later when your custom Webflow domain is live
+]);
 
 export function cors(origin: string | null) {
-  // In production, replace with your domains:
-  // const allowed = process.env.CORS_ORIGINS?.split(",") ?? DEFAULT_ALLOWED;
-  const allowed = DEFAULT_ALLOWED;
-  const isAllowed = allowed.includes("*") || (origin ? allowed.some(a => origin.endsWith(a)) : false);
-
+  // Base headers sent on all responses
   const headers = new Headers({
     "Access-Control-Allow-Methods": "GET,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Vary": "Origin"
+    "Vary": "Origin",
   });
 
-  if (isAllowed && origin) {
+  // If request has an Origin and it's allowed, echo it back
+  if (origin && ALLOWLIST.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
-  } else if (allowed.includes("*")) {
-    headers.set("Access-Control-Allow-Origin", "*");
   }
-
   return headers;
 }
 
 export function handleOptions(request: Request) {
   const origin = request.headers.get("origin");
   const headers = cors(origin);
+  // preflight OK (no body)
   return new Response(null, { status: 204, headers });
 }
