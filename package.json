@@ -6,27 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "echo \"no lint step for MVP\""
+    "zyte:test": "node scripts/zyte-test.js"
   },
   "dependencies": {
-    "cheerio": "1.0.0-rc.12",
     "next": "14.2.5",
-    "node-fetch": "3.3.2",
-    "pg": "8.11.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "pg": "^8.11.5"
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "pg": "^8.11.5",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.4.5"
   },
-  "devDependencies": {
-<<<<<<< HEAD
-    "typescript": "^5.5.4",
-    "@types/node": "^20.14.9",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@types/pg": "^8.10.2"
-=======
-    "@types/node": "^20.14.9",
-    "typescript": "^5.5.4"
->>>>>>> eee9dd4 (WIP: local updates before sync)
+  "engines": {
+    "node": ">=18.17.0"
   }
 }
