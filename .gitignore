@@ -7,7 +7,7 @@ out/
 
 # env & secrets
 .env*
-!.env.example
+!.env.local
 
 # OS junk
 .DS_Store

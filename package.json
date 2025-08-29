@@ -6,17 +6,23 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "zyte:test": "node scripts/zyte-test.js"
+    "zyte:test": "node scripts/zyte-test.js",
+    "a2a:scrape": "node scripts/a2a-scrape.js",
+    "a2a:upsert": "node scripts/a2a-upsert.js"
   },
   "dependencies": {
-    "next": "14.2.5",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
+    "cheerio": "^1.1.2",
+    "dotenv": "^16.6.1",
+    "next": "^14.2.32",
     "pg": "^8.11.5",
-    "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.4.5"
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "engines": {
     "node": ">=18.17.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "typescript": "5.9.2"
   }
 }
