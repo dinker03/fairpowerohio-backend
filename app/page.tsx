@@ -83,7 +83,7 @@ export default function Page() {
   return (
     <main style={{ padding: 40, fontFamily: "system-ui, sans-serif", maxWidth: 1200, margin: "0 auto" }}>
       <div style={{ marginBottom: 40 }}>
-        <h1 style={{ marginBottom: 10 }}>⚡️ FairPower Ohio Admin</h1>
+        <h1 style={{ marginBottom: 10 }}>⚡️ Fair Energy Ohio Admin</h1>
         <p style={{ color: "#666" }}>Live view of your Neon Database.</p>
       </div>
 
