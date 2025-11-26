@@ -26,7 +26,7 @@ const TARGETS = [
   // RENAMED:
   { id: 10, slug: 'duke-energy-gas', name: 'Duke Energy Ohio', commodity: 'gas' },   
   { id: 11, slug: 'centerpoint-energy', name: 'CenterPoint Energy', commodity: 'gas' } 
-];node scripts/a2a-scrape.js
+];
 
 const CUSTOMER_CLASS = 'residential';
 const TMP_DIR = path.join(process.cwd(), 'tmp');
