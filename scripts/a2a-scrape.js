@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 /**
  * scripts/a2a-scrape.js
- *
- * Fetches the Apples-to-Apples page via Zyte (rendered HTML),
- * saves HTML to tmp/page.html, parses it with scripts/a2a-parse.js,
- * and writes tmp/offers.json (+ debug).
- *
- * Usage:
- *   ZYTE_API_KEY=... npm run a2a:scrape
+ * Scrapes ALL major Ohio Electric Utilities.
  */
 
 require('dotenv').config({ path: '.env.local' });
@@ -16,21 +10,25 @@ const path = require('path');
 
 // ----------------------- Config -----------------------
 
-const TARGET_URL = 'https://energychoice.ohio.gov/ApplesToApplesComparision.aspx?Category=Electric&TerritoryId=6&RateCode=1';
+// Verified Territory IDs for Ohio
+const TARGETS = [
+  { id: 2, slug: 'aep-ohio', name: 'AEP Ohio' },
+  { id: 3, slug: 'toledo-edison', name: 'Toledo Edison' },
+  { id: 4, slug: 'duke-energy', name: 'Duke Energy' },
+  { id: 6, slug: 'illuminating-company', name: 'The Illuminating Company' },
+  { id: 7, slug: 'ohio-edison', name: 'Ohio Edison' },
+  { id: 9, slug: 'aes-ohio', name: 'AES Ohio' },
+];
 
-const UTILITY = 'aep-ohio';
 const COMMODITY = 'electric';
 const CUSTOMER_CLASS = 'residential';
-
-const TMP_DIR  = path.join(process.cwd(), 'tmp');
-const HTML_OUT = path.join(TMP_DIR, 'page.html');
-const JSON_OUT = path.join(TMP_DIR, 'offers.json');
+const TMP_DIR = path.join(process.cwd(), 'tmp');
 
 // ----------------------- Guards -----------------------
 
 const ZYTE_KEY = process.env.ZYTE_API_KEY;
 if (!ZYTE_KEY) {
-  console.error('Missing ZYTE_API_KEY in environment (.env.local).');
+  console.error('Missing ZYTE_API_KEY in environment.');
   process.exit(1);
 }
 
@@ -39,25 +37,16 @@ let parseA2A;
 try {
   const mod = require('./a2a-parse');
   parseA2A = mod.parseA2A || mod.default || mod;
-  if (typeof parseA2A !== 'function') throw new Error('scripts/a2a-parse.js must export a function');
 } catch (e) {
   console.error('Could not load scripts/a2a-parse.js:', e.message);
   process.exit(1);
 }
 
-// Ensure tmp/
+// Ensure tmp/ exists
 fs.mkdirSync(TMP_DIR, { recursive: true });
-
-// If your Node < 18.17 doesn’t have global fetch, uncomment next 2 lines:
-// const fetch = global.fetch || require('node-fetch');
 
 // ----------------------- Zyte helpers -----------------------
 
-function zyteAuthHeader(key) {
-  return 'Basic ' + Buffer.from(`${key}:`).toString('base64');
-}
-
-// 1) Browser-rendered HTML only
 async function zyteGetBrowserHtml(url) {
   const r = await fetch('https://api.zyte.com/v1/extract', {
     method: 'POST',
@@ -65,121 +54,76 @@ async function zyteGetBrowserHtml(url) {
       'Authorization': 'Basic ' + Buffer.from(`${ZYTE_KEY}:`).toString('base64'),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      url,
-      browserHtml: true, // ✅ no browserHtmlOptions here
-    }),
+    body: JSON.stringify({ url, browserHtml: true }),
   });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => '');
-    throw new Error(`Zyte browserHtml failed: ${r.status} ${r.statusText} :: ${txt}`);
-  }
+  if (!r.ok) throw new Error(`Zyte failed: ${r.status} ${r.statusText}`);
   const json = await r.json();
   return json.browserHtml || '';
 }
 
-
-// 2) Plain HTTP HTML only (fallback)
-async function zyteGetHttpHtml(url) {
-  const r = await fetch('https://api.zyte.com/v1/extract', {
-    method: 'POST',
-    headers: {
-      'Authorization': zyteAuthHeader(ZYTE_KEY),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      url,
-      httpResponseBody: true,
-    }),
-  });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => '');
-    throw new Error(`Zyte httpResponseBody failed: ${r.status} ${r.statusText} :: ${txt}`);
-  }
-  const json = await r.json();
-  if (json.httpResponseBody?.html) return json.httpResponseBody.html;
-  if (json.httpResponseBody?.data) {
-    return Buffer.from(json.httpResponseBody.data, 'base64').toString('utf8');
-  }
-  return '';
-}
-
-// ----------------------- Main -----------------------
+// ----------------------- Main Loop -----------------------
 
 (async () => {
-  const url = TARGET_URL;
+  console.log(`🚀 Starting scrape for ${TARGETS.length} utilities...`);
+  
+  for (const target of TARGETS) {
+    const url = `https://energychoice.ohio.gov/ApplesToApplesComparision.aspx?Category=Electric&TerritoryId=${target.id}&RateCode=1`;
+    const safeSlug = target.slug;
+    
+    console.log(`\n📡 Fetching: ${target.name} (ID: ${target.id})...`);
 
-  // First: try rendered HTML
-  let html = await zyteGetBrowserHtml(url);
+    try {
+      // 1. Fetch HTML
+      let html = await zyteGetBrowserHtml(url);
+      
+      // Simple retry if empty
+      if (!html || html.length < 5000) {
+        console.log('   ⚠️ HTML too small, retrying once...');
+        await new Promise(r => setTimeout(r, 2000));
+        html = await zyteGetBrowserHtml(url);
+      }
 
-  // Quick retry if tiny
-  if (!html || html.length < 2000) {
-    await new Promise(res => setTimeout(res, 1200));
-    const retryHtml = await zyteGetBrowserHtml(url).catch(() => '');
-    if (retryHtml && retryHtml.length > (html?.length || 0)) html = retryHtml;
+      // 2. Save HTML for debugging
+      const htmlFile = path.join(TMP_DIR, `page-${safeSlug}.html`);
+      fs.writeFileSync(htmlFile, html || '', 'utf8');
+
+      // 3. Parse Data
+      let offers = [];
+      let debug = {};
+      try {
+        // Pass the specific utility name so the parser can find the correct PTC
+        const parsed = parseA2A(html, { 
+          utility: safeSlug, 
+          utilityName: target.name, // Used for detecting PTC text
+          customerClass: CUSTOMER_CLASS 
+        });
+        offers = parsed.offers || [];
+        debug = parsed._debug;
+      } catch (e) {
+        console.error(`   ❌ Parse error for ${target.name}:`, e.message);
+      }
+
+      // 4. Save JSON
+      const jsonOut = {
+        date: new Date().toISOString().slice(0, 10),
+        utility: safeSlug,
+        commodity: COMMODITY,
+        offers,
+        _debug: debug
+      };
+      
+      const jsonFile = path.join(TMP_DIR, `offers-${safeSlug}.json`);
+      fs.writeFileSync(jsonFile, JSON.stringify(jsonOut, null, 2), 'utf8');
+      
+      console.log(`   ✅ Saved ${offers.length} offers -> ${path.relative(process.cwd(), jsonFile)}`);
+
+    } catch (err) {
+      console.error(`   ❌ Failed to scrape ${target.name}:`, err.message);
+    }
+
+    // Polite delay between requests
+    await new Promise(r => setTimeout(r, 2000));
   }
-
-  // Fallback: plain HTML
-  if (!html || html.length < 2000) {
-    const plainHtml = await zyteGetHttpHtml(url).catch(() => '');
-    if (plainHtml && plainHtml.length > (html?.length || 0)) html = plainHtml;
-  }
-
-  // Persist HTML (even if small) for inspection
-  fs.writeFileSync(HTML_OUT, html || '', 'utf8');
-
-  // Parse -> offers
-  let offers = [];
-  let debug = {};
-  try {
-    const parsed = parseA2A(html, { utility: UTILITY, customerClass: CUSTOMER_CLASS });
-    offers = Array.isArray(parsed?.offers) ? parsed.offers : [];
-    debug = parsed?._debug || {};
-  } catch (e) {
-    debug = { ...debug, parseError: String(e?.message || e) };
-  }
-
-  // Reason code
-  const reason =
-    !html ? 'no_html'
-  : html.length < 2000 ? 'html_too_short'
-  : !Array.isArray(offers) ? 'offers_not_array'
-  : offers.length === 0 ? (debug?.reason || 'no_offers_parsed')
-  : 'ok';
-
-  const out = {
-    date: new Date().toISOString().slice(0, 10),
-    utility: UTILITY,
-    commodity: COMMODITY,
-    customerClass: CUSTOMER_CLASS,
-    offers,
-    _debug: {
-      reason,
-      htmlSize: html ? html.length : 0,
-      pickedHeaders: debug?.pickedHeaders,
-      pickedRowCount: debug?.pickedRowCount,
-      parseError: debug?.parseError,
-    },
-  };
-
-  fs.writeFileSync(JSON_OUT, JSON.stringify(out, null, 2), 'utf8');
-
-  console.log(`Parsed ${offers.length} offers -> ${path.relative(process.cwd(), JSON_OUT)}`);
-  console.log(`Saved rendered HTML -> ${path.relative(process.cwd(), HTML_OUT)} (size: ${out._debug.htmlSize})`);
-})().catch(err => {
-  console.error('scrape error:', err.message || err);
-  // Still write a minimal artifact so downstream scripts don't explode
-  const fallback = {
-    date: new Date().toISOString().slice(0, 10),
-    utility: UTILITY,
-    commodity: COMMODITY,
-    customerClass: CUSTOMER_CLASS,
-    offers: [],
-    _debug: { reason: 'exception', error: String(err?.message || err) },
-  };
-  try {
-    fs.mkdirSync(TMP_DIR, { recursive: true });
-    fs.writeFileSync(JSON_OUT, JSON.stringify(fallback, null, 2), 'utf8');
-  } catch {}
-  process.exit(1);
-});
+  
+  console.log('\n✨ All scrapes complete.');
+})();
