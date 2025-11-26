@@ -4,6 +4,8 @@
 const ALLOWLIST = new Set<string>([
   "https://scotts-test-site-bf43b4.webflow.io", // ← replace with your actual Webflow staging origin
   "https://www.fairenergyohio.com", // ← add later when your custom Webflow domain is live
+  "http://localhost:3000",       // <--- ADD THIS for local dev
+  "http://127.0.0.1:3000"        // <--- OPTIONAL: sometimes useful
 ]);
 
 export function cors(origin: string | null) {

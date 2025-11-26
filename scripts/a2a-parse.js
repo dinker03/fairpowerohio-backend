@@ -19,17 +19,21 @@ function normSpace(s) {
 }
 
 function parseCentsPerKwh(raw) {
-  // handles like "8.49", "8.49¢", "$0.0849", "9 ¢", etc.
   if (!raw) return null;
   let s = String(raw).toLowerCase().trim();
-  // if it looks like dollars (starts with $ and < 0.99), convert to cents
-  if (s.startsWith('$')) {
-    const n = Number(s.replace(/[^0-9.]+/g, ''));
-    if (Number.isFinite(n)) return Math.round(n * 10000) / 100; // dollars/kWh -> cents/kWh
-  }
-  // otherwise read numeric (allow decimals)
+  
+  // Remove non-numeric chars except dot
   const n = Number(s.replace(/[^0-9.]+/g, ''));
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+
+  // HEURISTIC: Electricity is never < 1 cent/kWh or > 50 cents/kWh normally.
+  // If we see "0.06", it's definitely Dollars ($0.06).
+  // If we see "6.0", it's Cents.
+  if (n < 0.50) {
+    return Math.round(n * 100 * 100) / 100; // Convert Dollars to Cents
+  }
+  
+  return n; // Assume it's already cents
 }
 
 function parseTermMonths(raw) {
@@ -213,6 +217,37 @@ function parseOffersFromHtml(html, opts = {}) {
       monthly_fee: fee,
     });
   });
+
+  // ---------------------------------------------------------
+  // NEW: Scrape "Price to Compare" (PTC) - Specific to Ohio site
+  // ---------------------------------------------------------
+  // HTML: "...Price to Compare... is $0.0916 per kWh..."
+  // We clean up newlines/spaces first to make the regex easier.
+  const bodyText = $('body').text().replace(/\s+/g, ' '); 
+  
+  // Look for "Price to Compare" followed by anything (.*?) then "is" then the price
+  const ptcMatch = bodyText.match(/Price to Compare.*?is\s*(\$?\d+(?:\.\d+)?)/i);
+  
+  if (ptcMatch) {
+    const rawPtc = ptcMatch[1];
+    const ptcCents = parseCentsPerKwh(rawPtc);
+    
+    // If we found a valid number, add it as a "Standard Offer"
+    if (ptcCents) {
+      rows.push({
+        utility,
+        commodity: 'electric',
+        customerClass,
+        supplier: 'AEP Ohio (Standard Offer)', // This matches the SQL 'AEP Ohio%'
+        plan: 'Variable',
+        rate_cents_per_kwh: ptcCents,
+        term_months: 1, // Must be > 0 to pass the upsert safety check
+        early_termination_fee: 0,
+        monthly_fee: 0,
+      });
+    }
+  }
+  // ---------------------------------------------------------
 
   return {
     date,

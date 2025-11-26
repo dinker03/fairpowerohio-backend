@@ -28,11 +28,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. Fetch all offers for that most recent date, ordering them
-    //    by the best rate, then lowest fee, then by supplier name.
+    // 3. Fetch offers for that date, IGNORING 0.00 rates
     const offers = await dbQuery(
       `SELECT * FROM offers 
-       WHERE day = $1
+       WHERE day = $1 
+       AND rate_cents_per_kwh > 0.1 -- <--- SAFETY FILTER ADDED HERE
        ORDER BY rate_cents_per_kwh ASC, monthly_fee ASC, supplier ASC`,
       [latestDay]
     );
@@ -44,7 +44,6 @@ export async function GET(request: Request) {
     });
 
   } catch (e: any) {
-    // If anything goes wrong, return an error message.
     return new Response(JSON.stringify({ error: e.message }), {
       status: 500,
       headers: cors(origin),

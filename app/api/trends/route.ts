@@ -1,77 +1,108 @@
-// app/api/trends/route.ts
-import { cors, handleOptions } from "../../../lib/cors";
-import { dbQuery } from "../../../lib/db";
+import { NextResponse } from "next/server";
+import { dbQuery } from "../../../lib/db"; // Ensure this path matches where you put db.ts
+import { cors } from "../../../lib/cors"; // Ensure this matches where you put cors.ts
 
-export async function OPTIONS(request: Request) {
-  return handleOptions(request);
-}
+export const dynamic = "force-dynamic"; // Prevent Vercel from caching this forever
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const utility = (searchParams.get("utility") || "aep-ohio").toLowerCase();
-  const term = parseInt(searchParams.get("term") || "12", 10);
-
+  // 1. Handle CORS
   const origin = request.headers.get("origin");
   const headers = cors(origin);
-  headers.set("Content-Type", "application/json; charset=utf-8");
-  headers.set("Cache-Control", "public, max-age=0, s-maxage=300, stale-while-revalidate=86400");
 
-  // Pull last 12 weeks, bucketed by week, with best/median offer for the given term
-  // and the PTC (averaged within each week).
-  const rows = await dbQuery<{
-    date: string;
-    best_fixed: number | null;
-    median_fixed: number | null;
-    ptc: number | null;
-  }>(
-    `
-    with weeks as (
-      select
-        date_trunc('week', o.captured_at) as wk,
-        min(o.rate_cents_per_kwh) as best,
-        percentile_cont(0.5) within group (order by o.rate_cents_per_kwh) as median
-      from offers o
-      where o.utility_id = $1
-        and o.product_type = 'fixed'
-        and o.term_months = $2
-      group by 1
-      order by 1 desc
-      limit 12
-    ),
-    ptc as (
-      select
-        date_trunc('week', p.captured_at) as wk,
-        avg(p.ptc_cents_per_kwh) as ptc
-      from ptc_snapshots p
-      where p.utility_id = $1
-      group by 1
-    )
-    select
-      to_char(w.wk, 'YYYY-MM-DD') as date,
-      round(w.best::numeric, 3)   as best_fixed,
-      round(w.median::numeric, 3) as median_fixed,
-      round(p.ptc::numeric, 3)    as ptc
-    from weeks w
-    left join ptc p on p.wk = w.wk
-    order by date asc
-    `,
-    [utility, term]
-  );
+  try {
+    // 2. Run the "Trends" Query
+    // This calculates daily stats for Fixed plans (term >= 6 months)
+    const sql = `
+      WITH daily_stats AS (
+        SELECT
+          u.slug AS utility,
+          o.day,
+          -- Best Fixed Rate (Minimum)
+          MIN(CASE 
+            WHEN (o.plan ILIKE '%fixed%' OR o.product_type ILIKE '%fixed%') 
+            AND o.rate_cents_per_kwh > 0.0  -- <-- ADD THIS CHECK
+            THEN o.rate_cents_per_kwh 
+          END) as best_fixed,
+          
+          -- Median Fixed Rate (Statistical Middle)
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY o.rate_cents_per_kwh) 
+            FILTER (WHERE (o.plan ILIKE '%fixed%' OR o.product_type ILIKE '%fixed%')) 
+            as median_fixed,
 
-  // Map DB columns -> API shape expected by the frontend
-  const points = rows.map(r => ({
-    date: r.date,
-    bestFixed: r.best_fixed ?? null,
-    medianFixed: r.median_fixed ?? null,
-    ptc: r.ptc ?? null,
-  }));
+          -- "Price to Compare" (PTC)
+          -- We assume the utility itself (e.g. 'AEP Ohio') is the PTC provider.
+          -- Adjust 'AEP Ohio' string if the scraper saves it differently.
+          MAX(CASE WHEN o.supplier ILIKE 'AEP Ohio%' THEN o.rate_cents_per_kwh END) as ptc_rate
+        FROM offers o
+        JOIN utilities u ON o.utility_id = u.id
+        WHERE (o.term_months >= 6 OR o.supplier ILIKE 'AEP Ohio%') -- Filter out short-term/variable noise
+        GROUP BY u.slug, o.day
+        ORDER BY o.day ASC
+      )
+      SELECT * FROM daily_stats;
+    `;
 
-  // If there’s no data yet, return a friendly 200 with empty points
-  return new Response(JSON.stringify({ utility, term: String(term), points }), {
-    status: 200,
-    headers,
-  });
+    const rows = await dbQuery(sql);
+
+    // 3. Transform DB Rows into 'sample.ts' Format
+    const trendsData: Record<string, any[]> = {};
+    const latestByUtility: Record<string, any> = {};
+
+    for (const row of rows) {
+      // Helper to format date as YYYY-MM-DD
+      const dateStr = new Date(row.day).toISOString().slice(0, 10);
+      
+      // Construct the key (e.g., 'aep-ohio:elec:res:term12')
+      // Note: We hardcode :elec:res:term12 for now to match your frontend expectation,
+      // but you could make this dynamic later.
+      const key = `${row.utility}:elec:res:term12`;
+
+      if (!trendsData[key]) {
+        trendsData[key] = [];
+      }
+
+      // Add the point
+      trendsData[key].push({
+        date: dateStr,
+        ptc: Number(row.ptc_rate) || 0,
+        bestFixed: Number(row.best_fixed) || 0,
+        medianFixed: Number(row.median_fixed) || 0,
+      });
+
+      // Track latest stats for the summary
+      latestByUtility[row.utility] = {
+        utility: row.utility,
+        commodity: "electric",
+        customerClass: "residential",
+        bestFixedCentsPerKwh: Number(row.best_fixed) || 0,
+        medianFixedCentsPerKwh: Number(row.median_fixed) || 0,
+        ptcCentsPerKwh: Number(row.ptc_rate) || 0,
+        updatedAt: dateStr,
+      };
+    }
+
+    // 4. Build the Final JSON
+    const responseData = {
+      sampleTrends: trendsData, // Renamed to match your frontend prop? Or keep as 'trends'?
+      summary: {
+        updatedAt: new Date().toISOString().slice(0, 10),
+        utilities: Object.values(latestByUtility),
+      },
+    };
+
+    return NextResponse.json(responseData, { headers });
+
+  } catch (error: any) {
+    console.error("API Error:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error", details: error.message },
+      { status: 500, headers }
+    );
+  }
 }
 
-
-
+// 5. Handle OPTIONS (Pre-flight check for CORS)
+export async function OPTIONS(request: Request) {
+  const { handleOptions } = await import("../../../lib/cors");
+  return handleOptions(request);
+}
