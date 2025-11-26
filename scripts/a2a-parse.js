@@ -18,6 +18,10 @@ function parseRate(raw, commodity) {
 
 function parseTermMonths(raw) {
   if (!raw) return null;
+  // If it says "Month to Month", return 1
+  if (String(raw).toLowerCase().includes('month')) {
+     if (String(raw).toLowerCase().includes('to')) return 1;
+  }
   const n = parseInt(String(raw).replace(/[^\d]+/g, ''), 10);
   return Number.isFinite(n) ? n : null;
 }
@@ -42,19 +46,51 @@ function cleanDollar(raw) {
 
 function cleanSupplier(raw) {
   let s = normSpace(raw);
-  s = s.replace(/LLCP\.?O/gi, 'LLC PO'); 
-  s = s.replace(/IncPO/gi, 'Inc PO');
+
+  // 1. INJECT SPACES into "Mashed" Strings
+  // Existing rules...
+  s = s.replace(/(LLC)(\d)/gi, '$1 $2');
+  s = s.replace(/(Inc)(\d)/gi, '$1 $2');
+  s = s.replace(/(Energy)(PO)/gi, '$1 $2');
+  s = s.replace(/(Electric)(P\.?O)/gi, '$1 $2');
+  s = s.replace(/(LLC)(P\.?O)/gi, '$1 $2');
+  s = s.replace(/(Inc)(P\.?O)/gi, '$1 $2');
+
+  // --- NEW RULES FOR GAS SUPPLIERS ---
+  s = s.replace(/LLCOne/gi, 'LLC One');       // Fixes "Nordic...LLCOne"
+  s = s.replace(/HomeP\.?O/gi, 'Home PO');    // Fixes "NRG HomeP.O."
+  s = s.replace(/GasP\.?O/gi, 'Gas PO');      // Fixes "Ohio Natural GasP.O."
+  s = s.replace(/ProvisionP\.?O/gi, 'Provision PO'); // Fixes "ProvisionP.O."
+
+  // 2. Strip obvious UI fragments
   s = s.replace(/Company Url.*$/i, '').trim();
   s = s.replace(/Offer Details.*$/i, '').trim();
   s = s.replace(/Terms of Service.*$/i, '').trim();
   s = s.replace(/Sign Up.*$/i, '').trim();
 
-  const cutTokens = [/\bP\.?\s*O\.?\s*Box\b/i, /\bSuite\b/i, /\bStreet\b/i, /\bRoad\b/i, /\d{3}[-\s.]?\d{3}[-\s.]?\d{4}/];
+  // 3. Cut off once address/phone patterns begin
+  const cutTokens = [
+    /\bP\.?\s*O\.?\s*Box\b/i,
+    /\bSuite\b/i, /\bSte\b/i,
+    /\bStreet\b/i, /\bSt\b/i,
+    /\bRoad\b/i, /\bRd\b/i,
+    /\bAve\b/i, /\bBlvd\b/i, /\bLane\b/i, /\bDr\b/i,
+    /\d{3}[-\s.]?\d{3}[-\s.]?\d{4}/, // Phone numbers
+    /\d{1,5}\s+[a-zA-Z]/,            // Street addresses (123 Main)
+  ];
+
   for (const rx of cutTokens) {
     const m = s.match(rx);
-    if (m && m.index > 0) s = s.slice(0, m.index).trim();
+    if (m && m.index > 0) {
+      s = s.slice(0, m.index).trim();
+    }
   }
-  return s.replace(/[.,]+$/, '').trim();
+
+  // 4. Final Cleanup
+  s = s.replace(/\s{2,}/g, ' ').replace(/[|]+/g, '').trim();
+  s = s.replace(/[.,]+$/, ''); 
+
+  return s;
 }
 
 function detectUnit(commodity, headers) {
@@ -68,18 +104,27 @@ function detectUnit(commodity, headers) {
 
 const HEADER_ALIASES = {
   supplier: [/supplier/i], 
-  // STRICTER REGEX: Only match specific units to avoid matching "Intro Price" as "Rate"
   rate: [/\$\/kwh/i, /\$\/ccf/i, /\$\/mcf/i, /^\$\/unit/i],
   plan: [/rate type/i, /^type$/i],
   intro: [/intro/i],
-  term: [/term/i],
-  etf: [/early/i],
+  
+  // FIX: Check for "Early Term" (ETF) BEFORE checking for "Term"
+  etf: [/early/i, /termination/i],
+  
+  // FIX: Strict Regex for Term (Must start with 'term' or 'length', NO 'early')
+  // This prevents "Early Term Fee" from being caught here.
+  term: [/^term/i, /length/i], 
+  
   fee: [/monthly/i],
 };
 
 function normalizeHeader(label) {
   const l = normSpace(label).toLowerCase();
-  for (const key of Object.keys(HEADER_ALIASES)) {
+  // Iterate keys in order. Since we put 'etf' before 'term', it should catch it first.
+  // But Object key order isn't guaranteed in all environments, so let's be explicit:
+  const keys = ['supplier', 'rate', 'plan', 'intro', 'etf', 'term', 'fee'];
+  
+  for (const key of keys) {
     for (const rx of HEADER_ALIASES[key]) {
       if (rx.test(l)) return key;
     }
@@ -89,31 +134,21 @@ function normalizeHeader(label) {
 
 function pickLikelyTable($, commodity) {
   let best = null;
-
   $('table').each((i, el) => {
     const $t = $(el);
-    
-    // FIX: Only grab the VERY FIRST row of the table head.
-    // This ignores the "Sticky Header" duplicates.
     let headerRow = $t.find('thead tr').first();
     if (!headerRow.length) headerRow = $t.find('tr').first();
-    
-    // Get cells from that one row
     let headerCells = headerRow.find('th,td');
     
     const headers = headerCells.map((_, th) => normSpace($(th).text())).get().filter(Boolean);
     const mapped = headers.map(normalizeHeader);
     const have = new Set(mapped.filter(Boolean));
 
-    // Must have at least Supplier and Term
     if (!have.has('supplier') || !have.has('term')) return;
 
     const score = have.size;
-    if (!best || score > best.score) {
-      best = { table: $t, headers, mapped, score };
-    }
+    if (!best || score > best.score) best = { table: $t, headers, mapped, score };
   });
-
   return best;
 }
 
@@ -124,30 +159,22 @@ function parseOffersFromHtml(html, opts = {}) {
   const $ = cheerio.load(html);
 
   const pick = pickLikelyTable($, commodity);
-  
   const rows = [];
   let unit = '¢/kWh';
 
   if (pick) {
     const { table, headers, mapped } = pick;
     unit = detectUnit(commodity, headers);
-
     const idx = {}; 
     mapped.forEach((k, i) => { if (k) idx[k] = i; });
 
-    // Iterate rows (skip the first row which we know is header)
     const trs = table.find('tr');
     trs.each((ri, tr) => {
-      // Skip if this is the header row
       if (ri === 0 && $(tr).find('th').length > 0) return;
-
       const cells = $(tr).find('td');
       if (!cells.length) return; 
 
-      const get = (key) => {
-        const i = idx[key];
-        return (i != null) ? cells.eq(i).text() : '';
-      };
+      const get = (key) => { const i = idx[key]; return (i != null) ? cells.eq(i).text() : ''; };
 
       const supplier = cleanSupplier(get('supplier'));
       const rate = parseRate(get('rate'), commodity);
@@ -158,34 +185,19 @@ function parseOffersFromHtml(html, opts = {}) {
       const fee = cleanDollar(get('fee'));
 
       if (supplier && rate !== null && term !== null) {
-        rows.push({
-          utility, commodity, supplier, plan, 
-          rate_cents_per_kwh: rate, unit, 
-          term_months: term,
-          is_intro: isIntro,
-          early_termination_fee: etf,
-          monthly_fee: fee
-        });
+        rows.push({ utility, commodity, supplier, plan, rate_cents_per_kwh: rate, unit, term_months: term, is_intro: isIntro, early_termination_fee: etf, monthly_fee: fee });
       }
     });
   }
 
-  // PTC Logic
   const bodyText = $('body').text().replace(/\s+/g, ' ');
   const ptcMatch = bodyText.match(/Price to Compare.*?is\s*(\$?\d+(?:\.\d+)?)/i);
-  
   if (ptcMatch) {
     const ptcVal = parseRate(ptcMatch[1], commodity);
     if (ptcVal) {
-      rows.push({
-        utility, commodity, supplier: `${utilityName} (Standard Offer)`,
-        plan: 'Variable', rate_cents_per_kwh: ptcVal, unit,
-        term_months: 1, is_intro: false,
-        early_termination_fee: 0, monthly_fee: 0
-      });
+      rows.push({ utility, commodity, supplier: `${utilityName} (Standard Offer)`, plan: 'Variable', rate_cents_per_kwh: ptcVal, unit, term_months: 1, is_intro: false, early_termination_fee: 0, monthly_fee: 0 });
     }
   }
-
   return { offers: rows };
 }
 

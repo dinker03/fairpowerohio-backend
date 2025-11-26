@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * scripts/a2a-scrape.js
- * Scrapes ALL major Ohio Electric Utilities.
+ * Scrapes ALL major Ohio Electric AND Natural Gas Utilities.
  */
 
 require('dotenv').config({ path: '.env.local' });
@@ -10,17 +10,24 @@ const path = require('path');
 
 // ----------------------- Config -----------------------
 
-// Verified Territory IDs for Ohio
 const TARGETS = [
-  { id: 2, slug: 'aep-ohio', name: 'AEP Ohio' },
-  { id: 3, slug: 'toledo-edison', name: 'Toledo Edison' },
-  { id: 4, slug: 'duke-energy', name: 'Duke Energy' },
-  { id: 6, slug: 'illuminating-company', name: 'The Illuminating Company' },
-  { id: 7, slug: 'ohio-edison', name: 'Ohio Edison' },
-  { id: 9, slug: 'aes-ohio', name: 'AES Ohio' },
-];
+  // --- ELECTRIC (¢/kWh) ---
+  { id: 2, slug: 'aep-ohio', name: 'AEP Ohio', commodity: 'electric' },
+  { id: 3, slug: 'toledo-edison', name: 'Toledo Edison', commodity: 'electric' },
+  // RENAMED:
+  { id: 4, slug: 'duke-energy-electric', name: 'Duke Energy Ohio', commodity: 'electric' },
+  { id: 6, slug: 'illuminating-company', name: 'The Illuminating Company', commodity: 'electric' },
+  { id: 7, slug: 'ohio-edison', name: 'Ohio Edison', commodity: 'electric' },
+  { id: 9, slug: 'aes-ohio', name: 'AES Ohio', commodity: 'electric' },
 
-const COMMODITY = 'electric';
+  // --- NATURAL GAS ($/Mcf or $/Ccf) ---
+  { id: 1, slug: 'dominion-energy', name: 'Dominion Energy Ohio', commodity: 'gas' }, 
+  { id: 8, slug: 'columbia-gas', name: 'Columbia Gas of Ohio', commodity: 'gas' },    
+  // RENAMED:
+  { id: 10, slug: 'duke-energy-gas', name: 'Duke Energy Ohio', commodity: 'gas' },   
+  { id: 11, slug: 'centerpoint-energy', name: 'CenterPoint Energy', commodity: 'gas' } 
+];node scripts/a2a-scrape.js
+
 const CUSTOMER_CLASS = 'residential';
 const TMP_DIR = path.join(process.cwd(), 'tmp');
 
@@ -42,7 +49,6 @@ try {
   process.exit(1);
 }
 
-// Ensure tmp/ exists
 fs.mkdirSync(TMP_DIR, { recursive: true });
 
 // ----------------------- Zyte helpers -----------------------
@@ -67,34 +73,29 @@ async function zyteGetBrowserHtml(url) {
   console.log(`🚀 Starting scrape for ${TARGETS.length} utilities...`);
   
   for (const target of TARGETS) {
-    const url = `https://energychoice.ohio.gov/ApplesToApplesComparision.aspx?Category=Electric&TerritoryId=${target.id}&RateCode=1`;
-    const safeSlug = target.slug;
+    // Gas URLs use "NaturalGas", Electric use "Electric"
+    const category = target.commodity === 'gas' ? 'NaturalGas' : 'Electric';
+    const url = `https://energychoice.ohio.gov/ApplesToApplesComparision.aspx?Category=${category}&TerritoryId=${target.id}&RateCode=1`;
     
-    console.log(`\n📡 Fetching: ${target.name} (ID: ${target.id})...`);
+    console.log(`\n📡 Fetching: ${target.name} (${target.commodity})...`);
 
     try {
-      // 1. Fetch HTML
       let html = await zyteGetBrowserHtml(url);
       
-      // Simple retry if empty
       if (!html || html.length < 5000) {
         console.log('   ⚠️ HTML too small, retrying once...');
         await new Promise(r => setTimeout(r, 2000));
         html = await zyteGetBrowserHtml(url);
       }
 
-      // 2. Save HTML for debugging
-      const htmlFile = path.join(TMP_DIR, `page-${safeSlug}.html`);
-      fs.writeFileSync(htmlFile, html || '', 'utf8');
-
-      // 3. Parse Data
+      // Parse Data
       let offers = [];
       let debug = {};
       try {
-        // Pass the specific utility name so the parser can find the correct PTC
         const parsed = parseA2A(html, { 
-          utility: safeSlug, 
-          utilityName: target.name, // Used for detecting PTC text
+          utility: target.slug, 
+          utilityName: target.name, 
+          commodity: target.commodity, // Important: Tells parser NOT to convert Gas prices to cents
           customerClass: CUSTOMER_CLASS 
         });
         offers = parsed.offers || [];
@@ -103,16 +104,15 @@ async function zyteGetBrowserHtml(url) {
         console.error(`   ❌ Parse error for ${target.name}:`, e.message);
       }
 
-      // 4. Save JSON
       const jsonOut = {
         date: new Date().toISOString().slice(0, 10),
-        utility: safeSlug,
-        commodity: COMMODITY,
+        utility: target.slug,
+        commodity: target.commodity,
         offers,
         _debug: debug
       };
       
-      const jsonFile = path.join(TMP_DIR, `offers-${safeSlug}.json`);
+      const jsonFile = path.join(TMP_DIR, `offers-${target.slug}.json`);
       fs.writeFileSync(jsonFile, JSON.stringify(jsonOut, null, 2), 'utf8');
       
       console.log(`   ✅ Saved ${offers.length} offers -> ${path.relative(process.cwd(), jsonFile)}`);
@@ -121,7 +121,7 @@ async function zyteGetBrowserHtml(url) {
       console.error(`   ❌ Failed to scrape ${target.name}:`, err.message);
     }
 
-    // Polite delay between requests
+    // Polite delay
     await new Promise(r => setTimeout(r, 2000));
   }
   
