@@ -127,3 +127,4 @@ async function zyteGetBrowserHtml(url) {
   
   console.log('\n✨ All scrapes complete.');
 })();
+// Force update to fix syntax error
