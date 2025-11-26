@@ -184,5 +184,11 @@ export default function Page() {
 const activeBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "#3b82f6", color: "white", fontWeight: "600", cursor: "pointer" };
 const inactiveBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "transparent", color: "#4b5563", cursor: "pointer" };
 const selectStyle = { padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", background: "#fff", fontSize: "14px", cursor: "pointer", minWidth: "200px" };
-const thStyle = { padding: "12px 16px", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#6b7280" };
+const thStyle = { 
+  padding: "12px 16px", 
+  fontSize: "12px", 
+  textTransform: "uppercase" as const, // <--- The fix is here
+  letterSpacing: "0.05em", 
+  color: "#6b7280" 
+};
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
