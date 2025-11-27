@@ -2,21 +2,28 @@
 
 import { useEffect, useState, useMemo } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar
 } from "recharts";
 
-// Mapping utilities from slug to a short name for display
+// Utility Slugs for setting initial state
 const UTILITY_SLUGS = [
   'aep-ohio', 'toledo-edison', 'duke-energy-electric', 
-  'illuminating-company', 'ohio-edison', 'aes-ohio'
+  'illuminating-company', 'ohio-edison', 'aes-ohio', 
+  'dominion-energy', 'columbia-gas', 'duke-energy-gas', 'centerpoint-energy'
 ];
+
+const ELECTRIC_SLUGS = UTILITY_SLUGS.filter(s => s.includes('ohio') || s.includes('edison') || s.includes('company'));
+const GAS_SLUGS = UTILITY_SLUGS.filter(s => s.includes('gas') || s.includes('dominion') || s.includes('columbia') || s.includes('centerpoint'));
 
 // Helper to assign a stable color to each trend line
 const COLORS = [
   '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d',
+  '#f87171', '#fb923c', '#a855f7', '#ec4899',
 ];
 
-// --- Trends Filter Component ---
+// ------------------- Components -------------------
+
+// --- 1. Trends Filter Component ---
 const TrendsFilter = ({ trends, visibleTrends, setVisibleTrends, commodity }: {
   trends: Record<string, any[]>,
   visibleTrends: Record<string, boolean>,
@@ -32,14 +39,14 @@ const TrendsFilter = ({ trends, visibleTrends, setVisibleTrends, commodity }: {
 
   const trendKeys = Object.keys(trends).filter(key => 
     commodity === 'electric' 
-      ? key.includes('ohio') || key.includes('edison') || key.includes('company') 
-      : key.includes('gas') // Simplified check for gas trends
+      ? ELECTRIC_SLUGS.includes(key)
+      : GAS_SLUGS.includes(key)
   );
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px 25px', marginTop: '15px', padding: '10px 0' }}>
       <p style={{ margin: 0, fontWeight: 600, color: '#4b5563', width: '100%', fontSize: '14px' }}>
-        Visible Trend Lines:
+        Visible Trend Lines (Best Fixed Rate):
       </p>
       {trendKeys.map((slug, index) => (
         <label key={slug} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
@@ -57,11 +64,81 @@ const TrendsFilter = ({ trends, visibleTrends, setVisibleTrends, commodity }: {
     </div>
   );
 };
-// -----------------------------
+
+
+// --- 2. Bar Chart Component for Current Offers (with Custom Tooltip) ---
+const OffersBarChart = ({ offers, commodity, utilityOptions }: { 
+    offers: any[], 
+    commodity: string, 
+    utilityOptions: { id: number, name: string }[] 
+}) => {
+    
+    // Defensive utility mapping for the tooltip
+    const utilityMap = useMemo(() => {
+        return (utilityOptions || []).reduce((map, u) => { 
+            map[u.id] = u.name;
+            return map;
+        }, {} as Record<number, string>);
+    }, [utilityOptions]);
+    
+    // Only take the top 10 cheapest non-intro offers for readability
+    const chartData = offers
+      .filter(o => !o.is_intro && o.term_months >= 6) // Filter out intro and month-to-month
+      .sort((a, b) => a.rate_cents_per_kwh - b.rate_cents_per_kwh)
+      .slice(0, 10)
+      .map(o => ({
+        supplier: o.supplier,
+        utility_id: o.utility_id, 
+        plan: o.plan,
+        term: o.term_months,
+        rate: Number(o.rate_cents_per_kwh),
+      }));
+
+    if (chartData.length === 0) return <p style={{ padding: 20, textAlign: 'center' }}>No long-term fixed offers found for this filter.</p>;
+
+    const unit = commodity === 'electric' ? '¢' : '$';
+
+    // Custom Tooltip component for detailed information
+    const CustomTooltip = ({ active, payload }: any) => {
+        if (active && payload && payload.length) {
+            const data = payload[0].payload;
+            const utilityName = utilityMap[data.utility_id] || 'N/A';
+            
+            return (
+                <div style={{ backgroundColor: '#fff', border: '1px solid #ccc', padding: '10px', fontSize: '13px', borderRadius: '4px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
+                    <p style={{ fontWeight: 'bold', margin: '0 0 5px 0', color: '#333' }}>{data.supplier}</p>
+                    <p style={{ margin: 0, color: '#666' }}>Provider: {utilityName}</p>
+                    <p style={{ margin: 0, color: '#666' }}>Plan: {data.plan}</p>
+                    <p style={{ margin: 0, color: '#666' }}>Term: {data.term} months</p>
+                    <p style={{ margin: 0, color: '#10b981', fontWeight: 'bold' }}>Rate: {data.rate}{unit}</p>
+                </div>
+            );
+        }
+        return null;
+    };
+
+
+    return (
+        <div style={{ height: 350, marginTop: 20, padding: '20px 0' }}>
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ left: 5, right: 30, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    
+                    {/* AXIS FLIP: Amount on Y, Supplier on X */}
+                    <XAxis dataKey="supplier" type="category" interval={0} angle={-25} textAnchor="end" height={65} />
+                    <YAxis type="number" unit={unit} domain={[0, 'auto']} width={40} />
+                    
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="rate" fill="#10b981" name="Rate" />
+                </BarChart>
+            </ResponsiveContainer>
+        </div>
+    );
+};
+// ------------------- End Components -------------------
 
 
 export default function Page() {
-  // TRENDS data is now a dictionary of trend lines, keyed by slug
   const [trends, setTrends] = useState<Record<string, any[]>>({});
   const [offers, setOffers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,21 +148,24 @@ export default function Page() {
   const [selectedUtilityId, setSelectedUtilityId] = useState<string>("all");
   const [visibleTrends, setVisibleTrends] = useState<Record<string, boolean>>({});
 
+  // Utility to map all electric slugs to true on initial load
+  const initialElectricTrends = useMemo(() => {
+    return ELECTRIC_SLUGS.reduce((acc, slug) => ({ ...acc, [slug]: true }), {});
+  }, []);
+
   useEffect(() => {
     async function fetchData() {
       try {
-        // 1. Fetch Trends (All utilities are fetched here)
         const trendsRes = await fetch("/api/trends");
         const trendsJson = await trendsRes.json();
         const fetchedTrends = trendsJson.trends || {};
         setTrends(fetchedTrends);
 
-        // Set initial visible trends (just AEP Ohio for a clean start)
+        // --- FIX: Set ALL ELECTRIC trends visible by DEFAULT ---
         if (Object.keys(fetchedTrends).length > 0) {
-            setVisibleTrends({ [UTILITY_SLUGS[0]]: true });
+            setVisibleTrends(initialElectricTrends);
         }
 
-        // 2. Fetch Latest Offers (For the table/filters)
         const offersRes = await fetch("/api/offers/latest");
         const offersJson = await offersRes.json();
         setOffers(offersJson.offers || []);
@@ -97,37 +177,24 @@ export default function Page() {
       }
     }
     fetchData();
-  }, []);
+  }, [initialElectricTrends]);
 
-  // Merges all visible trend datasets into a single array for Recharts
+  // --- MERGE TREND DATA FOR CHART ---
   const mergedTrendData = useMemo(() => {
     const activeSlugs = Object.keys(visibleTrends).filter(slug => visibleTrends[slug] && trends[slug]);
     if (activeSlugs.length === 0) return [];
     
-    const allDates = new Set<string>();
     const dateMap = new Map<string, any>();
 
-    // 1. Collect all unique dates and build the base structure
     activeSlugs.forEach(slug => {
         trends[slug].forEach(dayData => {
-            allDates.add(dayData.date);
-        });
-    });
+            const date = dayData.date;
+            const currentEntry = dateMap.get(date) || { date };
 
-    // 2. Populate the merged data object
-    allDates.forEach(date => {
-        dateMap.set(date, { date });
-    });
-
-    // 3. Add rate data keyed by slug + rate type
-    activeSlugs.forEach(slug => {
-        trends[slug].forEach(dayData => {
-            const currentEntry = dateMap.get(dayData.date);
-            if (currentEntry) {
-                // We use Best Fixed for comparison
-                currentEntry[`${slug}_bestFixed`] = dayData.bestFixed;
-                currentEntry[`${slug}_ptc`] = dayData.ptc;
-            }
+            // We use Best Fixed for comparison
+            currentEntry[`${slug}_bestFixed`] = dayData.bestFixed;
+            
+            dateMap.set(date, currentEntry);
         });
     });
 
@@ -135,7 +202,7 @@ export default function Page() {
   }, [trends, visibleTrends]);
 
 
-  // Filter Logic (for the table below)
+  // --- TABLE FILTER LOGIC ---
   const filteredOffers = useMemo(() => {
     return offers.filter(o => {
       const isElectric = o.unit === '¢/kWh';
@@ -147,7 +214,7 @@ export default function Page() {
   }, [offers, commodity, selectedUtilityId]);
 
 
-  // Generate Dropdown Options dynamically based on commodity
+  // --- DROPDOWN OPTIONS ---
   const utilityOptions = useMemo(() => {
     const uniqueMap = new Map();
     offers.forEach(o => {
@@ -163,6 +230,22 @@ export default function Page() {
   }, [offers, commodity]);
 
 
+  // --- HANDLER TO RESET TREND VISIBILITY ON COMMODITY TOGGLE ---
+  const handleCommodityToggle = (newCommodity: 'electric' | 'gas') => {
+    setCommodity(newCommodity);
+    setSelectedUtilityId("all"); 
+
+    if (newCommodity === 'electric') {
+        // Select all electric trends by default
+        setVisibleTrends(initialElectricTrends);
+    } else {
+        // Select all gas trends by default
+        const initialGasTrends = GAS_SLUGS.reduce((acc, slug) => ({ ...acc, [slug]: true }), {});
+        setVisibleTrends(initialGasTrends);
+    }
+  };
+
+
   if (loading) return <div style={{ padding: 40 }}>Loading data...</div>;
 
   return (
@@ -175,8 +258,7 @@ export default function Page() {
       </div>
 
       {/* --- TRENDS CHART SECTION --- */}
-      {commodity === 'electric' && (
-        <section style={{ marginBottom: 40 }}>
+      <section style={{ marginBottom: 40 }}>
           <h2 style={{ borderBottom: "1px solid #eee", paddingBottom: 10 }}>
             📊 Comparative Rate Trends
           </h2>
@@ -194,7 +276,7 @@ export default function Page() {
               <LineChart data={mergedTrendData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
-                <YAxis domain={['auto', 'auto']} unit="¢" />
+                <YAxis domain={['auto', 'auto']} unit={commodity === 'electric' ? '¢' : '$'} />
                 <Tooltip />
                 <Legend />
                 
@@ -213,8 +295,16 @@ export default function Page() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </section>
-      )}
+      </section>
+
+      {/* --- INDIVIDUAL SUPPLIER COMPARISON BAR CHART --- */}
+      <section style={{ marginBottom: 40 }}>
+        <h2 style={{ borderBottom: "1px solid #eee", paddingBottom: 10 }}>
+            📉 Top 10 Cheapest Offers ({commodity === 'electric' ? 'Electric' : 'Gas'})
+        </h2>
+        <OffersBarChart offers={filteredOffers} commodity={commodity} utilityOptions={utilityOptions} />
+      </section>
+
 
       {/* --- TOOLBAR --- */}
       <section style={{ marginBottom: 20 }}>
@@ -228,8 +318,8 @@ export default function Page() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{fontWeight: 600, fontSize: "14px", marginRight: 8, color: "#4b5563"}}>Energy Type:</span>
             <div style={{ background: "#fff", padding: 4, borderRadius: 6, display: "flex", border: "1px solid #d1d5db" }}>
-              <button onClick={() => { setCommodity("electric"); setSelectedUtilityId("all"); }} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button>
-              <button onClick={() => { setCommodity("gas"); setSelectedUtilityId("all"); }} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Natural Gas</button>
+              <button onClick={() => handleCommodityToggle("electric")} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button>
+              <button onClick={() => handleCommodityToggle("gas")} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Natural Gas</button>
             </div>
           </div>
 
@@ -277,7 +367,7 @@ export default function Page() {
                         }
                       </span>
                       {offer.is_intro && (
-                        <span style={{ fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", textTransform: "uppercase", fontWeight: 700 }}>
+                        <span style={{ fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", textTransform: "uppercase" as const, fontWeight: 700 }}>
                           INTRO
                         </span>
                       )}
