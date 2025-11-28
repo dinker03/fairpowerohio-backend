@@ -61,7 +61,6 @@ export default function RatesPage() {
       return ((rate / 100) * usage) + fees;
     } else {
       // Gas: Rate ($) * Usage + Fees
-      // Note: Gas units vary (Ccf vs Mcf), but the math is usually Rate * Units
       return (rate * usage) + fees;
     }
   };
@@ -190,14 +189,14 @@ export default function RatesPage() {
                 </td>
 
                 <td style={tdStyle}>
-                  {offer.term_months > 0 ? `${offer.term_months} mo` : "Monthly"}
+                  {offer.term_months > 0 ? `${offer.term_months} mo` : "Month-to-Month"}
                 </td>
 
-                {/* ACTION COLUMN */}
+                {/* ACTION COLUMN (SHOW BOTH) */}
                 <td style={tdStyle}>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {/* 1. Sign Up Button (Priority) */}
-                    {offer.signup_url ? (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {/* 1. Sign Up Button */}
+                    {offer.signup_url && (
                         <a 
                             href={offer.signup_url} 
                             target="_blank" 
@@ -207,19 +206,19 @@ export default function RatesPage() {
                         >
                             Sign Up ↗
                         </a>
-                    ) : (
-                        // 2. Fallback: Remind Me (only if term > 0)
-                        offer.term_months > 0 && (
-                            <a 
-                                href={generateCalendarLink(offer)} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                style={reminderBtnStyle}
-                                title="Set a calendar reminder"
-                            >
-                                📅 Remind
-                            </a>
-                        )
+                    )}
+                    
+                    {/* 2. Reminder Button */}
+                    {offer.term_months > 0 && (
+                        <a 
+                            href={generateCalendarLink(offer)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={reminderBtnStyle}
+                            title="Set a calendar reminder"
+                        >
+                            📅
+                        </a>
                     )}
                   </div>
                 </td>
@@ -249,9 +248,19 @@ const labelStyle = { fontWeight: 600, fontSize: "14px", color: "#374151" };
 const thStyle = { padding: "12px 16px", fontSize: "12px", textTransform: "uppercase" as const, color: "#6b7280", fontWeight: 600 };
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
 const badgeStyle = { fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", fontWeight: 700 };
+const reminderBtnStyle = { 
+    fontSize: "16px", 
+    background: "transparent", 
+    color: "#374151", 
+    padding: "4px", 
+    borderRadius: "4px", 
+    textDecoration: "none", 
+    display: "inline-block",
+    cursor: "pointer"
+};
 const signUpBtnStyle = {
     fontSize: "12px", 
-    background: "#10b981", // Green
+    background: "#10b981", 
     color: "white", 
     padding: "6px 12px", 
     borderRadius: "6px", 
@@ -259,15 +268,4 @@ const signUpBtnStyle = {
     fontWeight: 600,
     display: "inline-block",
     whiteSpace: "nowrap" as const
-};
-const reminderBtnStyle = { 
-    fontSize: "12px", 
-    background: "#f3f4f6", 
-    color: "#374151", 
-    padding: "6px 10px", 
-    borderRadius: "6px", 
-    textDecoration: "none", 
-    border: "1px solid #e5e7eb",
-    fontWeight: 500,
-    display: "inline-block"
 };
