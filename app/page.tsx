@@ -15,6 +15,7 @@ type Offer = {
   early_termination_fee: number;
   day: string;
   is_intro: boolean;
+  signup_url?: string;
 };
 
 export default function RatesPage() {
@@ -192,21 +193,35 @@ export default function RatesPage() {
                   {offer.term_months > 0 ? `${offer.term_months} mo` : "Monthly"}
                 </td>
 
-                {/* ACTION COLUMN (REMINDER) */}
+                {/* ACTION COLUMN */}
                 <td style={tdStyle}>
-                    {offer.term_months > 0 ? (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {/* 1. Sign Up Button (Priority) */}
+                    {offer.signup_url ? (
                         <a 
-                            href={generateCalendarLink(offer)} 
+                            href={offer.signup_url} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            style={reminderBtnStyle}
-                            title="Set a calendar reminder for when this contract ends"
+                            style={signUpBtnStyle}
+                            title="Go to supplier website"
                         >
-                            📅 Remind Me
+                            Sign Up ↗
                         </a>
                     ) : (
-                        <span style={{color: "#ccc", fontSize: "12px"}}>No Term</span>
+                        // 2. Fallback: Remind Me (only if term > 0)
+                        offer.term_months > 0 && (
+                            <a 
+                                href={generateCalendarLink(offer)} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                style={reminderBtnStyle}
+                                title="Set a calendar reminder"
+                            >
+                                📅 Remind
+                            </a>
+                        )
                     )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -234,6 +249,17 @@ const labelStyle = { fontWeight: 600, fontSize: "14px", color: "#374151" };
 const thStyle = { padding: "12px 16px", fontSize: "12px", textTransform: "uppercase" as const, color: "#6b7280", fontWeight: 600 };
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
 const badgeStyle = { fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", fontWeight: 700 };
+const signUpBtnStyle = {
+    fontSize: "12px", 
+    background: "#10b981", // Green
+    color: "white", 
+    padding: "6px 12px", 
+    borderRadius: "6px", 
+    textDecoration: "none", 
+    fontWeight: 600,
+    display: "inline-block",
+    whiteSpace: "nowrap" as const
+};
 const reminderBtnStyle = { 
     fontSize: "12px", 
     background: "#f3f4f6", 

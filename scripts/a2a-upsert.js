@@ -36,21 +36,24 @@ async function upsertFile(client, filePath) {
   let saved = 0;
   for (const o of offers) {
     if (!o.rate_cents_per_kwh || o.rate_cents_per_kwh === 0) continue; 
-    if (!o.term_months && o.term_months !== 0) continue; 
 
+    // Added signup_url ($11)
     await client.query(`
       INSERT INTO offers (
         utility_id, supplier, plan, rate_cents_per_kwh, 
-        term_months, early_termination_fee, monthly_fee, day, source, unit, is_intro
+        term_months, early_termination_fee, monthly_fee, day, source, unit, is_intro, signup_url
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'energychoice.ohio.gov', $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'energychoice.ohio.gov', $9, $10, $11)
       ON CONFLICT (utility_id, supplier, plan, term_months, is_intro, day) 
-      DO UPDATE SET rate_cents_per_kwh = EXCLUDED.rate_cents_per_kwh
+      DO UPDATE SET 
+         rate_cents_per_kwh = EXCLUDED.rate_cents_per_kwh,
+         signup_url = EXCLUDED.signup_url
     `, [
       utilityId, o.supplier, o.plan, o.rate_cents_per_kwh, 
-      o.term_months, o.early_termination_fee || 0, o.monthly_fee || 0,
+      o.term_months || 0, o.early_termination_fee || 0, o.monthly_fee || 0,
       runDate, o.unit || '¢/kWh', 
-      o.is_intro || false // <--- NEW FIELD
+      o.is_intro || false,
+      o.signup_url || null // <--- New Field
     ]);
     saved++;
   }
