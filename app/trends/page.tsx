@@ -21,12 +21,14 @@ export default function TrendsPage() {
   const [commodity, setCommodity] = useState<"electric" | "gas">("electric");
   const [metric, setMetric] = useState<"min" | "avg" | "median" | "max">("min");
   
-  // Set default chart type to 'bar' as requested (Line 25)
+  // DEFAULT CHART TYPE: BAR
   const [chartType, setChartType] = useState<"line" | "bar" | "area" | "stacked">("bar");
   const [showFilters, setShowFilters] = useState(true);
   
   // Multi-select state
+  // UTILITY IS SINGLE SELECT (String)
   const [selectedUtility, setSelectedUtility] = useState<string>(""); 
+  // Supplier is MULTI SELECT (Set)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Set<string>>(new Set());
 
   // --- HELPER: Check if supplier has data for current commodity ---
@@ -40,24 +42,18 @@ export default function TrendsPage() {
   const selectTop5Suppliers = (data: any[], utilitySlug: string, currentCommodity: string) => {
     if (!data || data.length === 0) return new Set<string>();
 
-    // 1. Find the most recent date in the dataset
     const lastDate = data[data.length - 1].date;
     const recentData = data.filter((d: any) => d.date === lastDate);
-
-    // 2. Find all suppliers for this utility on that date
     const suppliersWithRates: { name: string, rate: number }[] = [];
     
-    // Scan keys to find rates for the selected utility
     if (recentData.length > 0) {
         const dayRecord = recentData[0];
         Object.keys(dayRecord).forEach(key => {
-            // Key format: "utility|supplier|metric"
-            // We specifically look for the 'min' metric to find the lowest price
             if (key.startsWith(`${utilitySlug}|`) && key.endsWith('|min')) {
                 const supplierName = key.split('|')[1];
                 const rate = dayRecord[key];
                 
-                // Check unit to ensure we don't mix gas/electric
+                // Check unit
                 const unitKey = `${utilitySlug}|${supplierName}|unit`;
                 const unit = dayRecord[unitKey];
                 const isElectric = unit === '¢/kWh';
@@ -69,7 +65,6 @@ export default function TrendsPage() {
         });
     }
 
-    // 3. Sort by rate (lowest first) and take top 5
     suppliersWithRates.sort((a, b) => a.rate - b.rate);
     const top5 = suppliersWithRates.slice(0, 5).map(s => s.name);
     
@@ -86,17 +81,17 @@ export default function TrendsPage() {
         setRawData(trendsData);
         setMeta(json.meta || { suppliers: [], utilities: [] });
 
-        // Initial Defaults logic
-        // 1. Try to find "Illuminating Company", otherwise fallback to first electric utility
-        const illuminating = json.meta.utilities.find((u: string) => u.includes('illuminating'));
+        // Initial Defaults
+        // 1. Set Utility to Illuminating Company (if exists), otherwise first electric
+        const illuminating = json.meta.utilities.find((u: string) => u.toLowerCase().includes('illuminating'));
         const defaultUtil = illuminating || json.meta.utilities.find((u: string) => !u.includes('gas') && !u.includes('dominion'));
         
         if (defaultUtil) {
             setSelectedUtility(defaultUtil);
             
             // 2. Set Suppliers to Top 5 Cheapest for that utility
-            const topSuppliers = selectTop5Suppliers(trendsData, defaultUtil, "electric");
-            setSelectedSuppliers(topSuppliers);
+            const top5 = selectTop5Suppliers(trendsData, defaultUtil, "electric");
+            setSelectedSuppliers(top5);
         }
 
       } catch (err) {
@@ -121,7 +116,6 @@ export default function TrendsPage() {
 
     let newUtil = "";
     if (validUtilities.length > 0) {
-        // Prefer Dominion for gas if available, otherwise take first
         if (type === 'gas') {
              const dom = validUtilities.find(u => u.includes('dominion'));
              newUtil = dom || validUtilities[0];
@@ -133,10 +127,10 @@ export default function TrendsPage() {
         setSelectedUtility("");
     }
     
-    // Auto-select Top 5 for the new utility
-    if (newUtil) {
-        const topSuppliers = selectTop5Suppliers(rawData, newUtil, type);
-        setSelectedSuppliers(topSuppliers);
+    // Auto-select Top 5
+    if (newUtil && rawData.length > 0) {
+        const top5 = selectTop5Suppliers(rawData, newUtil, type);
+        setSelectedSuppliers(top5);
     } else {
         setSelectedSuppliers(new Set()); 
     }
@@ -158,6 +152,12 @@ export default function TrendsPage() {
     setSelectedSuppliers(new Set(validSuppliers));
   };
 
+  const handleResetTop5 = () => {
+      if (!selectedUtility) return;
+      const top5 = selectTop5Suppliers(rawData, selectedUtility, commodity);
+      setSelectedSuppliers(top5);
+  };
+
   // --- 3. PREPARE CHART LINES ---
   const chartLines = useMemo(() => {
     const lines: any[] = [];
@@ -173,7 +173,6 @@ export default function TrendsPage() {
         
         if (hasData) {
             const sampleRow = rawData.find(r => r[unitKey]);
-            
             if (sampleRow) {
                  const unit = sampleRow[unitKey];
                  const isElectric = unit === '¢/kWh';
@@ -196,12 +195,13 @@ export default function TrendsPage() {
   // --- 4. CUSTOM TOOLTIP ---
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const sorted = [...payload].sort((a: any, b: any) => Number(a.value) - Number(b.value));
       return (
-        <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', fontSize: '12px' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: '5px' }}>{label}</p>
-          {payload.map((entry: any, index: number) => (
+        <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', fontSize: '12px', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+          <p style={{ fontWeight: 'bold', marginBottom: '5px', borderBottom: '1px solid #eee', paddingBottom: '3px' }}>{label}</p>
+          {sorted.map((entry: any, index: number) => (
             <div key={index} style={{ color: entry.color, marginBottom: '3px' }}>
-              {entry.name}: <strong>{entry.value}</strong>
+              <span style={{fontWeight: 600}}>{entry.name}:</span> {entry.value}
             </div>
           ))}
         </div>
@@ -260,7 +260,6 @@ export default function TrendsPage() {
         );
     }
 
-    // Default Line Chart
     return (
         <LineChart {...commonProps}>
             {axes}
@@ -274,13 +273,11 @@ export default function TrendsPage() {
 
   if (loading) return <div style={{ padding: 40 }}>Loading market data...</div>;
 
-  // Calculate filtered options for rendering
   const validUtilities = meta.utilities.filter(u => {
       const isGas = u.includes('gas') || u.includes('dominion') || u.includes('columbia') || u.includes('centerpoint');
       return (commodity === 'gas' && isGas) || (commodity === 'electric' && !isGas);
   });
 
-  // Now we can safely use the helper function
   const validSuppliers = meta.suppliers.filter(s => isSupplierValidForCommodity(s, commodity));
 
   return (
@@ -290,10 +287,8 @@ export default function TrendsPage() {
         <p style={{ color: "#666" }}>Compare historical pricing by supplier, utility, and rate metric.</p>
       </div>
 
-      {/* --- CONTROLS CONTAINER --- */}
       <div style={controlPanelStyle}>
         
-        {/* ROW 1: Toggles */}
         <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap', borderBottom: showFilters ? '1px solid #e5e7eb' : 'none', paddingBottom: showFilters ? 15 : 0, marginBottom: showFilters ? 15 : 0 }}>
             
             <div style={groupStyle}>
@@ -328,26 +323,22 @@ export default function TrendsPage() {
                 </select>
             </div>
 
-            {/* Show/Hide Filters Toggle */}
             <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>
                 {showFilters ? "Hide Filters ▲" : "Show Filters ▼"}
             </button>
         </div>
 
-        {/* ROW 2: Filters (Collapsible) */}
         {showFilters && (
             <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap' }}>
                 
-                {/* Utility Dropdown (Single Select) */}
                 <div style={{ flex: 1, minWidth: '250px' }}>
                     <p style={sectionHeaderStyle}>1. Select Utility</p>
                     <select 
                         value={selectedUtility} 
                         onChange={(e) => {
                             setSelectedUtility(e.target.value);
-                            // Auto-select top 5 for the new utility
-                            const topSuppliers = selectTop5Suppliers(rawData, e.target.value, commodity);
-                            setSelectedSuppliers(topSuppliers);
+                            const top5 = selectTop5Suppliers(rawData, e.target.value, commodity);
+                            setSelectedSuppliers(top5);
                         }}
                         style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
                     >
@@ -357,12 +348,12 @@ export default function TrendsPage() {
                     </select>
                 </div>
 
-                {/* Supplier List (Multi Select) */}
                 <div style={{ flex: 2, minWidth: '300px' }}>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
                         <p style={sectionHeaderStyle}>2. Select Suppliers ({validSuppliers.length})</p>
                         <div style={{display: 'flex', gap: '8px'}}>
                             <button onClick={() => handleSelectAllSuppliers(true)} style={textBtnStyle}>All</button>
+                            <button onClick={handleResetTop5} style={textBtnStyle}>Cheapest 5</button> 
                             <button onClick={() => handleSelectAllSuppliers(false)} style={textBtnStyle}>None</button>
                         </div>
                     </div>
@@ -381,7 +372,6 @@ export default function TrendsPage() {
         )}
       </div>
 
-      {/* --- CHART --- */}
       <div style={{ height: 500, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
         <ResponsiveContainer width="100%" height="100%">
            {renderChart()}
