@@ -192,7 +192,6 @@ export default function TrendsPage() {
 
       let history = historyData[selectedUtility];
 
-      // Fuzzy Match Fallback
       if (!history) {
           const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
           const target = normalize(selectedUtility);
@@ -205,7 +204,6 @@ export default function TrendsPage() {
       
       if (!history || history.length === 0) return [];
       
-      // Filter for 2022 or newer
       return history
         .filter((d: any) => d.year >= 2022)
         .map((d: any) => ({
@@ -284,7 +282,6 @@ export default function TrendsPage() {
         );
     }
 
-    // Default Line Chart
     return (
         <LineChart {...commonProps}>
             {axes}
@@ -350,17 +347,15 @@ export default function TrendsPage() {
                 </select>
             </div>
 
-            {/* Show/Hide Filters Toggle */}
             <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>
                 {showFilters ? "Hide Filters ▲" : "Show Filters ▼"}
             </button>
         </div>
 
-        {/* ROW 2: Filters (Collapsible) */}
         {showFilters && (
             <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap' }}>
                 
-                {/* Utility Dropdown (Single Select) */}
+                {/* Utility Dropdown */}
                 <div style={{ flex: 1, minWidth: '250px' }}>
                     <p style={sectionHeaderStyle}>1. Select Utility</p>
                     <select 
@@ -378,7 +373,7 @@ export default function TrendsPage() {
                     </select>
                 </div>
 
-                {/* Supplier List (Multi Select) */}
+                {/* Supplier List */}
                 <div style={{ flex: 2, minWidth: '300px' }}>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
                         <p style={sectionHeaderStyle}>2. Select Suppliers ({selectedSuppliers.size})</p>
@@ -434,7 +429,7 @@ export default function TrendsPage() {
                     />
                     <YAxis domain={[0, "auto"]} unit={commodity === "electric" ? "¢" : "$"} />
                     <Tooltip 
-                        formatter={(value: number) => [`${value}${commodity === "electric" ? "¢" : "$"}`, "PTC Rate"]}
+                        formatter={(value: any) => [`${value}${commodity === "electric" ? "¢" : "$"}`, "PTC Rate"]}
                         labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}
                     />
                     <Legend />
@@ -445,6 +440,7 @@ export default function TrendsPage() {
                         name="Official PTC" 
                         radius={[4, 4, 0, 0]}
                     >
+                        {/* TYPE-SAFE LABEL FORMATTER */}
                         <LabelList 
                             dataKey="price" 
                             position="insideBottom" 
@@ -452,7 +448,7 @@ export default function TrendsPage() {
                             style={{ fontWeight: 'bold', fontSize: '10px', textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}
                             formatter={(val: any) => {
                                 if (typeof val !== 'number') return '';
-                                const rounded = val.toFixed(2);
+                                const rounded = Number(val).toFixed(2);
                                 return `${rounded}${commodity === 'electric' ? '¢' : '$'}`;
                             }}
                         />
