@@ -9,75 +9,96 @@ export async function GET(request: Request) {
   const headers = cors(origin);
 
   try {
-    // 1. Fetch DAILY STATS for every Supplier + Utility combination
-    // We group by Utility AND Supplier to allow detailed filtering.
-    const sql = `
+    // QUERY 1: Daily Market Trends
+    const dailySql = `
       SELECT
         u.slug AS utility_slug,
         u.display_name AS utility_name,
         o.supplier,
         o.day,
         o.unit,
-        
-        -- METRICS
         MIN(o.rate_cents_per_kwh) as min_rate,
         AVG(o.rate_cents_per_kwh) as avg_rate,
         MAX(o.rate_cents_per_kwh) as max_rate,
-        
-        -- Median Calculation (Approximate for performance)
         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY o.rate_cents_per_kwh) as median_rate,
-
-        -- Count offers to filter out noise if needed
         COUNT(*) as offer_count
-
       FROM offers o
       JOIN utilities u ON o.utility_id = u.id
-      
       WHERE 
-        o.rate_cents_per_kwh > 0.1  -- Ignore zero/bad data
-        AND (o.term_months >= 3 OR o.supplier ILIKE '%Standard Offer%') -- Filter short terms
-        -- Note: We allow all units (Gas/Electric) and filter in Frontend
-
+        o.rate_cents_per_kwh > 0.1
+        AND (o.term_months >= 3 OR o.supplier ILIKE '%Standard Offer%')
       GROUP BY u.slug, u.display_name, o.supplier, o.day, o.unit
       ORDER BY o.day ASC;
     `;
 
-    const rows = await dbQuery(sql);
+    // QUERY 2: Historical PTC (Re-added)
+    const historySql = `
+      SELECT 
+        utility_slug,
+        start_date,
+        end_date,
+        price,
+        unit,
+        year
+      FROM historical_ptc
+      ORDER BY start_date ASC;
+    `;
 
-    // 2. Organize Data for Frontend
-    // Structure: { date: "2023-01-01", [key]: value, ... }
-    // Key format: "utilitySlug|supplierName|metric"
-    
+    const [dailyRows, historyRows] = await Promise.all([
+      dbQuery(dailySql),
+      dbQuery(historySql)
+    ]);
+
+    // Process Daily Trends
     const dateMap = new Map<string, any>();
-
-    for (const row of rows) {
+    for (const row of dailyRows) {
       const dateStr = new Date(row.day).toISOString().slice(0, 10);
-      
       if (!dateMap.has(dateStr)) {
         dateMap.set(dateStr, { date: dateStr });
       }
       const entry = dateMap.get(dateStr);
 
-      // Create unique keys for plotting
-      // Format: "aep-ohio|Energy Harbor|min"
       const baseKey = `${row.utility_slug}|${row.supplier}`;
-      
       entry[`${baseKey}|min`] = Number(row.min_rate);
       entry[`${baseKey}|avg`] = Number(row.avg_rate);
       entry[`${baseKey}|max`] = Number(row.max_rate);
       entry[`${baseKey}|median`] = Number(row.median_rate);
-      entry[`${baseKey}|unit`] = row.unit; // Store unit to filter Gas vs Electric later
+      entry[`${baseKey}|unit`] = row.unit;
     }
-
-    // Convert Map to Array
+    
     const trendsData = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-    // Extract Unique Lists for Filters
-    const suppliers = Array.from(new Set(rows.map(r => r.supplier))).sort();
-    const utilities = Array.from(new Set(rows.map(r => r.utility_slug))).sort();
+    // Process History & Normalize Slugs
+    const historyData: Record<string, any[]> = {};
+    
+    // Helper: "Illuminating Company" -> "illuminating-company"
+    const toSlug = (str: string) => str.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+    for (const row of historyRows) {
+      let slug = row.utility_slug;
+      // If it looks like a name (has spaces), slugify it
+      if (slug.includes(' ')) slug = toSlug(slug);
+
+      if (!historyData[slug]) historyData[slug] = [];
+      
+      // Handle price conversion if CSV was in dollars (0.07) but chart needs cents (7.0)
+      const priceVal = Number(row.price);
+      const finalPrice = (row.unit === '¢/kWh' || row.unit === 'kWh') && priceVal < 1 ? priceVal * 100 : priceVal;
+
+      historyData[slug].push({
+        date: new Date(row.start_date).toISOString().slice(0, 10),
+        price: finalPrice,
+        unit: row.unit,
+        year: row.year
+      });
+    }
+
+    const suppliers = Array.from(new Set(dailyRows.map(r => r.supplier))).sort();
+    const utilities = Array.from(new Set(dailyRows.map(r => r.utility_slug))).sort();
 
     return NextResponse.json({ 
         trends: trendsData,
+        history: historyData, // <--- Included in response
         meta: { suppliers, utilities }
     }, { headers });
 

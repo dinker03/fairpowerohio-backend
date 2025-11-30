@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, AreaChart, Area
+  BarChart, Bar, AreaChart, Area, LabelList
 } from "recharts";
 
 // --- COLORS ---
@@ -14,6 +14,7 @@ const PALETTE = [
 
 export default function TrendsPage() {
   const [rawData, setRawData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<Record<string, any[]>>({});
   const [meta, setMeta] = useState<{ suppliers: string[], utilities: string[] }>({ suppliers: [], utilities: [] });
   const [loading, setLoading] = useState(true);
 
@@ -21,14 +22,12 @@ export default function TrendsPage() {
   const [commodity, setCommodity] = useState<"electric" | "gas">("electric");
   const [metric, setMetric] = useState<"min" | "avg" | "median" | "max">("min");
   
-  // DEFAULT CHART TYPE: BAR
+  // Set default chart type to 'bar'
   const [chartType, setChartType] = useState<"line" | "bar" | "area" | "stacked">("bar");
   const [showFilters, setShowFilters] = useState(true);
   
   // Multi-select state
-  // UTILITY IS SINGLE SELECT (String)
   const [selectedUtility, setSelectedUtility] = useState<string>(""); 
-  // Supplier is MULTI SELECT (Set)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Set<string>>(new Set());
 
   // --- HELPER: Check if supplier has data for current commodity ---
@@ -40,7 +39,7 @@ export default function TrendsPage() {
 
   // --- HELPER: Select Top 5 Cheapest Suppliers ---
   const selectTop5Suppliers = (data: any[], utilitySlug: string, currentCommodity: string) => {
-    if (!data || data.length === 0) return new Set<string>();
+    if (!data || !Array.isArray(data) || data.length === 0) return new Set<string>();
 
     const lastDate = data[data.length - 1].date;
     const recentData = data.filter((d: any) => d.date === lastDate);
@@ -53,7 +52,6 @@ export default function TrendsPage() {
                 const supplierName = key.split('|')[1];
                 const rate = dayRecord[key];
                 
-                // Check unit
                 const unitKey = `${utilitySlug}|${supplierName}|unit`;
                 const unit = dayRecord[unitKey];
                 const isElectric = unit === '¢/kWh';
@@ -77,19 +75,20 @@ export default function TrendsPage() {
       try {
         const res = await fetch("/api/trends");
         const json = await res.json();
-        const trendsData = json.trends || [];
+        
+        const trendsData = Array.isArray(json.trends) ? json.trends : [];
         setRawData(trendsData);
-        setMeta(json.meta || { suppliers: [], utilities: [] });
+        setHistoryData(json.history || {}); 
+        
+        const utilList = json.meta?.utilities || [];
+        setMeta({ ...json.meta, utilities: utilList });
 
         // Initial Defaults
-        // 1. Set Utility to Illuminating Company (if exists), otherwise first electric
-        const illuminating = json.meta.utilities.find((u: string) => u.toLowerCase().includes('illuminating'));
-        const defaultUtil = illuminating || json.meta.utilities.find((u: string) => !u.includes('gas') && !u.includes('dominion'));
+        const illuminating = utilList.find((u: string) => u.toLowerCase().includes('illuminating'));
+        const defaultUtil = illuminating || utilList.find((u: string) => !u.includes('gas') && !u.includes('dominion'));
         
         if (defaultUtil) {
             setSelectedUtility(defaultUtil);
-            
-            // 2. Set Suppliers to Top 5 Cheapest for that utility
             const top5 = selectTop5Suppliers(trendsData, defaultUtil, "electric");
             setSelectedSuppliers(top5);
         }
@@ -104,11 +103,9 @@ export default function TrendsPage() {
   }, []);
 
   // --- 2. FILTER HELPERS ---
-  
   const handleCommoditySwitch = (type: "electric" | "gas") => {
     setCommodity(type);
     
-    // Find the first valid utility for this new commodity
     const validUtilities = meta.utilities.filter(u => {
         const isGas = u.includes('gas') || u.includes('dominion') || u.includes('columbia') || u.includes('centerpoint');
         return (type === 'gas' && isGas) || (type === 'electric' && !isGas);
@@ -127,7 +124,6 @@ export default function TrendsPage() {
         setSelectedUtility("");
     }
     
-    // Auto-select Top 5
     if (newUtil && rawData.length > 0) {
         const top5 = selectTop5Suppliers(rawData, newUtil, type);
         setSelectedSuppliers(top5);
@@ -192,7 +188,37 @@ export default function TrendsPage() {
     return lines;
   }, [rawData, selectedUtility, selectedSuppliers, metric, commodity]);
 
-  // --- 4. CUSTOM TOOLTIP ---
+  // --- 4. PREPARE HISTORY CHART DATA ---
+  const activeHistoryData = useMemo(() => {
+      if (!selectedUtility || !historyData) return [];
+
+      let history = historyData[selectedUtility];
+
+      // Fuzzy Match Fallback
+      if (!history) {
+          const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const target = normalize(selectedUtility);
+          const matchingKey = Object.keys(historyData).find(k => {
+              const normK = normalize(k);
+              return normK.includes(target) || target.includes(normK);
+          });
+          if (matchingKey) history = historyData[matchingKey];
+      }
+      
+      if (!history || history.length === 0) return [];
+      
+      // UPDATED: Filter for 2022 or newer
+      return history
+        .filter((d: any) => d.year >= 2022)
+        .map((d: any) => ({
+            date: d.date,
+            price: d.price,
+            year: d.year
+        }))
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
+  }, [historyData, selectedUtility]);
+
+  // --- 5. CUSTOM TOOLTIP ---
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const sorted = [...payload].sort((a: any, b: any) => Number(a.value) - Number(b.value));
@@ -210,7 +236,7 @@ export default function TrendsPage() {
     return null;
   };
 
-  // --- 5. RENDER CHART COMPONENT ---
+  // --- 6. RENDER CHART COMPONENT ---
   const renderChart = () => {
     const commonProps = {
         data: rawData,
@@ -287,96 +313,95 @@ export default function TrendsPage() {
         <p style={{ color: "#666" }}>Compare historical pricing by supplier, utility, and rate metric.</p>
       </div>
 
+      {/* --- CONTROLS CONTAINER --- */}
       <div style={controlPanelStyle}>
-        
+        {/* ... (Same Controls as before) ... */}
         <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap', borderBottom: showFilters ? '1px solid #e5e7eb' : 'none', paddingBottom: showFilters ? 15 : 0, marginBottom: showFilters ? 15 : 0 }}>
-            
-            <div style={groupStyle}>
-                <span style={labelStyle}>Market:</span>
-                <div style={toggleGroupStyle}>
-                    <button onClick={() => handleCommoditySwitch("electric")} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button>
-                    <button onClick={() => handleCommoditySwitch("gas")} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Gas</button>
-                </div>
-            </div>
-
-            <div style={groupStyle}>
-                <span style={labelStyle}>Metric:</span>
-                <div style={toggleGroupStyle}>
-                    <button onClick={() => setMetric("min")} style={metric === "min" ? activeBtn : inactiveBtn}>Lowest</button>
-                    <button onClick={() => setMetric("avg")} style={metric === "avg" ? activeBtn : inactiveBtn}>Average</button>
-                    <button onClick={() => setMetric("median")} style={metric === "median" ? activeBtn : inactiveBtn}>Median</button>
-                    <button onClick={() => setMetric("max")} style={metric === "max" ? activeBtn : inactiveBtn}>Highest</button>
-                </div>
-            </div>
-
-             <div style={groupStyle}>
-                <span style={labelStyle}>Chart Type:</span>
-                <select 
-                    value={chartType} 
-                    onChange={(e) => setChartType(e.target.value as any)}
-                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
-                >
-                    <option value="line">Line Chart</option>
-                    <option value="bar">Bar Chart</option>
-                    <option value="area">Area Chart</option>
-                    <option value="stacked">Stacked Bar</option>
-                </select>
-            </div>
-
-            <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>
-                {showFilters ? "Hide Filters ▲" : "Show Filters ▼"}
-            </button>
+            <div style={groupStyle}><span style={labelStyle}>Market:</span><div style={toggleGroupStyle}><button onClick={() => handleCommoditySwitch("electric")} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button><button onClick={() => handleCommoditySwitch("gas")} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Gas</button></div></div>
+            <div style={groupStyle}><span style={labelStyle}>Metric:</span><div style={toggleGroupStyle}><button onClick={() => setMetric("min")} style={metric === "min" ? activeBtn : inactiveBtn}>Lowest</button><button onClick={() => setMetric("avg")} style={metric === "avg" ? activeBtn : inactiveBtn}>Average</button><button onClick={() => setMetric("median")} style={metric === "median" ? activeBtn : inactiveBtn}>Median</button><button onClick={() => setMetric("max")} style={metric === "max" ? activeBtn : inactiveBtn}>Highest</button></div></div>
+             <div style={groupStyle}><span style={labelStyle}>Chart Type:</span><select value={chartType} onChange={(e) => setChartType(e.target.value as any)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}><option value="line">Line Chart</option><option value="bar">Bar Chart</option><option value="area">Area Chart</option><option value="stacked">Stacked Bar</option></select></div>
+            <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>{showFilters ? "Hide Filters ▲" : "Show Filters ▼"}</button>
         </div>
 
         {showFilters && (
             <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap' }}>
-                
                 <div style={{ flex: 1, minWidth: '250px' }}>
                     <p style={sectionHeaderStyle}>1. Select Utility</p>
-                    <select 
-                        value={selectedUtility} 
-                        onChange={(e) => {
-                            setSelectedUtility(e.target.value);
-                            const top5 = selectTop5Suppliers(rawData, e.target.value, commodity);
-                            setSelectedSuppliers(top5);
-                        }}
-                        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
-                    >
-                        {validUtilities.map(u => (
-                            <option key={u} value={u}>{u.replace(/-/g, ' ').toUpperCase()}</option>
-                        ))}
+                    <select value={selectedUtility} onChange={(e) => { setSelectedUtility(e.target.value); const top5 = selectTop5Suppliers(rawData, e.target.value, commodity); setSelectedSuppliers(top5); }} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
+                        {validUtilities.map(u => (<option key={u} value={u}>{u.replace(/-/g, ' ').toUpperCase()}</option>))}
                     </select>
                 </div>
-
                 <div style={{ flex: 2, minWidth: '300px' }}>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
-                        <p style={sectionHeaderStyle}>2. Select Suppliers ({validSuppliers.length})</p>
-                        <div style={{display: 'flex', gap: '8px'}}>
-                            <button onClick={() => handleSelectAllSuppliers(true)} style={textBtnStyle}>All</button>
-                            <button onClick={handleResetTop5} style={textBtnStyle}>Cheapest 5</button> 
-                            <button onClick={() => handleSelectAllSuppliers(false)} style={textBtnStyle}>None</button>
-                        </div>
+                        <p style={sectionHeaderStyle}>2. Select Suppliers ({selectedSuppliers.size})</p>
+                        <div style={{display: 'flex', gap: '8px'}}><button onClick={() => handleSelectAllSuppliers(true)} style={textBtnStyle}>All</button><button onClick={handleResetTop5} style={textBtnStyle}>Top 5</button><button onClick={() => handleSelectAllSuppliers(false)} style={textBtnStyle}>None</button></div>
                     </div>
                     <div style={scrollListStyle}>
-                        {validSuppliers.map(s => (
-                            <label key={s} style={checkboxLabelStyle}>
-                                <input type="checkbox" checked={selectedSuppliers.has(s)} onChange={() => toggleSupplier(s)} />
-                                <span style={{fontSize: '12px'}}>{s}</span>
-                            </label>
-                        ))}
+                        {validSuppliers.map(s => (<label key={s} style={checkboxLabelStyle}><input type="checkbox" checked={selectedSuppliers.has(s)} onChange={() => toggleSupplier(s)} /><span style={{fontSize: '12px'}}>{s}</span></label>))}
                         {validSuppliers.length === 0 && <p style={{fontSize: '12px', color: '#888', padding: '5px'}}>Select a utility to view suppliers.</p>}
                     </div>
                 </div>
-
             </div>
         )}
       </div>
 
-      <div style={{ height: 500, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
+      {/* --- MAIN CHART --- */}
+      <div style={{ height: 450, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb", marginBottom: 40 }}>
+        <h3 style={{fontSize: '16px', fontWeight: 600, marginBottom: 10}}>Current Market Trends (Daily)</h3>
         <ResponsiveContainer width="100%" height="100%">
            {renderChart()}
         </ResponsiveContainer>
       </div>
+
+      {/* --- HISTORY CHART SECTION (UPDATED) --- */}
+      {activeHistoryData.length > 0 && (
+          <div style={{ marginTop: 40 }}>
+            <div style={{ height: 350, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
+                <h3 style={{fontSize: '16px', fontWeight: 600, marginBottom: 10}}>
+                    Official Price to Compare History (2022 - Present)
+                </h3>
+                <p style={{ color: "#666", fontSize: "13px", marginBottom: "10px" }}>
+                    Historical benchmark rates for <strong>{selectedUtility.replace(/-/g, ' ').toUpperCase()}</strong>
+                </p>
+                <ResponsiveContainer width="100%" height="100%">
+                {/* CHANGED TO BAR CHART */}
+                <BarChart data={activeHistoryData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                        dataKey="date" 
+                        tickFormatter={(d) => {
+                            const date = new Date(d);
+                            return `${date.toLocaleString('default', { month: 'short' })} '${date.getFullYear().toString().substr(2)}`;
+                        }} 
+                        interval="preserveStartEnd"
+                    />
+                    <YAxis domain={[0, "auto"]} unit={commodity === "electric" ? "¢" : "$"} />
+                    <Tooltip />
+                    <Legend />
+                    
+                    <Bar 
+                        dataKey="price" 
+                        fill="#10b981" 
+                        name="Official PTC" 
+                        radius={[4, 4, 0, 0]}
+                    >
+                        {/* VALUE LABELS AT BOTTOM OF BAR */}
+                       <LabelList 
+                            dataKey="price" 
+                            position="insideBottom" 
+                            fill="white" 
+                            style={{ fontWeight: 'bold', fontSize: '10px', textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}
+                            formatter={(val: number) => {
+                                const rounded = Number(val).toFixed(2); // Round to 2 decimals
+                                return `${rounded}${commodity === 'electric' ? '¢' : '$'}`;
+                            }}
+                        />
+                    </Bar>
+                </BarChart>
+                </ResponsiveContainer>
+            </div>
+          </div>
+      )}
 
     </main>
   );
