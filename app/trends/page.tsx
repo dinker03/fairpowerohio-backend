@@ -83,7 +83,6 @@ export default function TrendsPage() {
         const utilList = json.meta?.utilities || [];
         setMeta({ ...json.meta, utilities: utilList });
 
-        // Initial Defaults
         const illuminating = utilList.find((u: string) => u.toLowerCase().includes('illuminating'));
         const defaultUtil = illuminating || utilList.find((u: string) => !u.includes('gas') && !u.includes('dominion'));
         
@@ -105,7 +104,6 @@ export default function TrendsPage() {
   // --- 2. FILTER HELPERS ---
   const handleCommoditySwitch = (type: "electric" | "gas") => {
     setCommodity(type);
-    
     const validUtilities = meta.utilities.filter(u => {
         const isGas = u.includes('gas') || u.includes('dominion') || u.includes('columbia') || u.includes('centerpoint');
         return (type === 'gas' && isGas) || (type === 'electric' && !isGas);
@@ -207,7 +205,7 @@ export default function TrendsPage() {
       
       if (!history || history.length === 0) return [];
       
-      // UPDATED: Filter for 2022 or newer
+      // Filter for 2022 or newer
       return history
         .filter((d: any) => d.year >= 2022)
         .map((d: any) => ({
@@ -286,6 +284,7 @@ export default function TrendsPage() {
         );
     }
 
+    // Default Line Chart
     return (
         <LineChart {...commonProps}>
             {axes}
@@ -315,32 +314,91 @@ export default function TrendsPage() {
 
       {/* --- CONTROLS CONTAINER --- */}
       <div style={controlPanelStyle}>
-        {/* ... (Same Controls as before) ... */}
+        
+        {/* ROW 1: Toggles */}
         <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap', borderBottom: showFilters ? '1px solid #e5e7eb' : 'none', paddingBottom: showFilters ? 15 : 0, marginBottom: showFilters ? 15 : 0 }}>
-            <div style={groupStyle}><span style={labelStyle}>Market:</span><div style={toggleGroupStyle}><button onClick={() => handleCommoditySwitch("electric")} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button><button onClick={() => handleCommoditySwitch("gas")} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Gas</button></div></div>
-            <div style={groupStyle}><span style={labelStyle}>Metric:</span><div style={toggleGroupStyle}><button onClick={() => setMetric("min")} style={metric === "min" ? activeBtn : inactiveBtn}>Lowest</button><button onClick={() => setMetric("avg")} style={metric === "avg" ? activeBtn : inactiveBtn}>Average</button><button onClick={() => setMetric("median")} style={metric === "median" ? activeBtn : inactiveBtn}>Median</button><button onClick={() => setMetric("max")} style={metric === "max" ? activeBtn : inactiveBtn}>Highest</button></div></div>
-             <div style={groupStyle}><span style={labelStyle}>Chart Type:</span><select value={chartType} onChange={(e) => setChartType(e.target.value as any)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}><option value="line">Line Chart</option><option value="bar">Bar Chart</option><option value="area">Area Chart</option><option value="stacked">Stacked Bar</option></select></div>
-            <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>{showFilters ? "Hide Filters ▲" : "Show Filters ▼"}</button>
+            
+            <div style={groupStyle}>
+                <span style={labelStyle}>Market:</span>
+                <div style={toggleGroupStyle}>
+                    <button onClick={() => handleCommoditySwitch("electric")} style={commodity === "electric" ? activeBtn : inactiveBtn}>⚡️ Electric</button>
+                    <button onClick={() => handleCommoditySwitch("gas")} style={commodity === "gas" ? activeBtn : inactiveBtn}>🔥 Gas</button>
+                </div>
+            </div>
+
+            <div style={groupStyle}>
+                <span style={labelStyle}>Metric:</span>
+                <div style={toggleGroupStyle}>
+                    <button onClick={() => setMetric("min")} style={metric === "min" ? activeBtn : inactiveBtn}>Lowest</button>
+                    <button onClick={() => setMetric("avg")} style={metric === "avg" ? activeBtn : inactiveBtn}>Average</button>
+                    <button onClick={() => setMetric("median")} style={metric === "median" ? activeBtn : inactiveBtn}>Median</button>
+                    <button onClick={() => setMetric("max")} style={metric === "max" ? activeBtn : inactiveBtn}>Highest</button>
+                </div>
+            </div>
+
+             <div style={groupStyle}>
+                <span style={labelStyle}>Chart Type:</span>
+                <select 
+                    value={chartType} 
+                    onChange={(e) => setChartType(e.target.value as any)}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
+                >
+                    <option value="line">Line Chart</option>
+                    <option value="bar">Bar Chart</option>
+                    <option value="area">Area Chart</option>
+                    <option value="stacked">Stacked Bar</option>
+                </select>
+            </div>
+
+            {/* Show/Hide Filters Toggle */}
+            <button onClick={() => setShowFilters(!showFilters)} style={{ marginLeft: 'auto', ...textBtnStyle }}>
+                {showFilters ? "Hide Filters ▲" : "Show Filters ▼"}
+            </button>
         </div>
 
+        {/* ROW 2: Filters (Collapsible) */}
         {showFilters && (
             <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap' }}>
+                
+                {/* Utility Dropdown (Single Select) */}
                 <div style={{ flex: 1, minWidth: '250px' }}>
                     <p style={sectionHeaderStyle}>1. Select Utility</p>
-                    <select value={selectedUtility} onChange={(e) => { setSelectedUtility(e.target.value); const top5 = selectTop5Suppliers(rawData, e.target.value, commodity); setSelectedSuppliers(top5); }} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                        {validUtilities.map(u => (<option key={u} value={u}>{u.replace(/-/g, ' ').toUpperCase()}</option>))}
+                    <select 
+                        value={selectedUtility} 
+                        onChange={(e) => {
+                            setSelectedUtility(e.target.value);
+                            const top5 = selectTop5Suppliers(rawData, e.target.value, commodity);
+                            setSelectedSuppliers(top5);
+                        }}
+                        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}
+                    >
+                        {validUtilities.map(u => (
+                            <option key={u} value={u}>{u.replace(/-/g, ' ').toUpperCase()}</option>
+                        ))}
                     </select>
                 </div>
+
+                {/* Supplier List (Multi Select) */}
                 <div style={{ flex: 2, minWidth: '300px' }}>
                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
                         <p style={sectionHeaderStyle}>2. Select Suppliers ({selectedSuppliers.size})</p>
-                        <div style={{display: 'flex', gap: '8px'}}><button onClick={() => handleSelectAllSuppliers(true)} style={textBtnStyle}>All</button><button onClick={handleResetTop5} style={textBtnStyle}>Top 5</button><button onClick={() => handleSelectAllSuppliers(false)} style={textBtnStyle}>None</button></div>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                            <button onClick={() => handleSelectAllSuppliers(true)} style={textBtnStyle}>All</button>
+                            <button onClick={handleResetTop5} style={textBtnStyle}>Top 5</button> 
+                            <button onClick={() => handleSelectAllSuppliers(false)} style={textBtnStyle}>None</button>
+                        </div>
                     </div>
                     <div style={scrollListStyle}>
-                        {validSuppliers.map(s => (<label key={s} style={checkboxLabelStyle}><input type="checkbox" checked={selectedSuppliers.has(s)} onChange={() => toggleSupplier(s)} /><span style={{fontSize: '12px'}}>{s}</span></label>))}
+                        {validSuppliers.map(s => (
+                            <label key={s} style={checkboxLabelStyle}>
+                                <input type="checkbox" checked={selectedSuppliers.has(s)} onChange={() => toggleSupplier(s)} />
+                                <span style={{fontSize: '12px'}}>{s}</span>
+                            </label>
+                        ))}
                         {validSuppliers.length === 0 && <p style={{fontSize: '12px', color: '#888', padding: '5px'}}>Select a utility to view suppliers.</p>}
                     </div>
                 </div>
+
             </div>
         )}
       </div>
@@ -353,7 +411,7 @@ export default function TrendsPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* --- HISTORY CHART SECTION (UPDATED) --- */}
+      {/* --- HISTORY CHART SECTION --- */}
       {activeHistoryData.length > 0 && (
           <div style={{ marginTop: 40 }}>
             <div style={{ height: 350, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
@@ -364,7 +422,6 @@ export default function TrendsPage() {
                     Historical benchmark rates for <strong>{selectedUtility.replace(/-/g, ' ').toUpperCase()}</strong>
                 </p>
                 <ResponsiveContainer width="100%" height="100%">
-                {/* CHANGED TO BAR CHART */}
                 <BarChart data={activeHistoryData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
@@ -376,7 +433,10 @@ export default function TrendsPage() {
                         interval="preserveStartEnd"
                     />
                     <YAxis domain={[0, "auto"]} unit={commodity === "electric" ? "¢" : "$"} />
-                    <Tooltip />
+                    <Tooltip 
+                        formatter={(value: number) => [`${value}${commodity === "electric" ? "¢" : "$"}`, "PTC Rate"]}
+                        labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}
+                    />
                     <Legend />
                     
                     <Bar 
@@ -385,14 +445,14 @@ export default function TrendsPage() {
                         name="Official PTC" 
                         radius={[4, 4, 0, 0]}
                     >
-                        {/* VALUE LABELS AT BOTTOM OF BAR */}
-                       <LabelList 
+                        <LabelList 
                             dataKey="price" 
                             position="insideBottom" 
                             fill="white" 
                             style={{ fontWeight: 'bold', fontSize: '10px', textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}
-                            formatter={(val: number) => {
-                                const rounded = Number(val).toFixed(2); // Round to 2 decimals
+                            formatter={(val: any) => {
+                                if (typeof val !== 'number') return '';
+                                const rounded = val.toFixed(2);
                                 return `${rounded}${commodity === 'electric' ? '¢' : '$'}`;
                             }}
                         />
