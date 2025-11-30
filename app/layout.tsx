@@ -2,7 +2,7 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata = {
-  title: "FairPower Ohio Admin",
+  title: "Fair Energy Ohio Admin",
   description: "Internal dashboard for monitoring energy rates",
 };
 
@@ -19,7 +19,7 @@ export default function RootLayout({
         <nav style={{ background: "#ffffff", borderBottom: "1px solid #e5e7eb", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <span style={{ fontSize: "20px" }}>⚡️</span>
-            <span style={{ fontWeight: 700, fontSize: "18px", color: "#111827" }}>FairPower Ohio</span>
+            <span style={{ fontWeight: 700, fontSize: "18px", color: "#111827" }}>Fair Energy Ohio</span>
           </div>
           
           <div style={{ display: "flex", gap: "24px" }}>

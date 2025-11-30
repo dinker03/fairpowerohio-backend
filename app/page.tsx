@@ -119,7 +119,7 @@ export default function RatesPage() {
     <main>
       <div style={{ marginBottom: 30 }}>
         <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>Current Market Rates</h1>
-        <p style={{ color: "#666" }}>Live offers scraped from Energy Choice Ohio.</p>
+        <p style={{ color: "#666" }}>Live offers from Energy Choice Ohio.</p>
       </div>
 
       {/* TOOLBAR */}
