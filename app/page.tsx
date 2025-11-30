@@ -18,6 +18,15 @@ type Offer = {
   signup_url?: string;
 };
 
+// Map the display name to the actual data key for sorting
+const SORTABLE_COLUMNS: Record<string, string> = {
+  'Utility': 'utility_name',
+  'Supplier': 'supplier',
+  'Plan': 'plan',
+  'Rate': 'rate_cents_per_kwh',
+  'Term': 'term_months',
+};
+
 // --- CORE COMPONENT ---
 
 export default function RatesPage() {
@@ -28,6 +37,10 @@ export default function RatesPage() {
   const [commodity, setCommodity] = useState<"electric" | "gas">("electric");
   const [selectedUtilityId, setSelectedUtilityId] = useState<string>("all");
   const [usage, setUsage] = useState<number>(1000); 
+
+  // Sorting State: Default sort to the lowest Rate (Ascending)
+  const [sortColumn, setSortColumn] = useState<string>('rate_cents_per_kwh');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     async function fetchData() {
@@ -44,6 +57,27 @@ export default function RatesPage() {
     fetchData();
   }, []);
 
+  // --- HANDLE COMMODITY SWITCH (RESTORED) ---
+  const handleCommodityChange = (newCommodity: "electric" | "gas") => {
+    setCommodity(newCommodity);
+    setSelectedUtilityId("all");
+    // Set smart defaults for usage when switching
+    if (newCommodity === "electric") setUsage(1000); // 1000 kWh is avg
+    else setUsage(5); // 5-10 Mcf/Ccf is typical for gas
+  };
+
+  // --- SORTING HANDLER ---
+  const handleSort = (columnKey: string) => {
+    if (sortColumn === columnKey) {
+      // Toggle direction if same column is clicked
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new column and default to ascending
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+  };
+
   // --- CORE FILTER & SORT LOGIC ---
   const finalOffers = useMemo(() => {
     // 1. Filtering
@@ -55,15 +89,39 @@ export default function RatesPage() {
       return true;
     });
 
-    // 2. Sorting (Hardcoded to Lowest Rate First)
-    currentOffers.sort((a, b) => {
-      const rateA = Number(a.rate_cents_per_kwh) || 0;
-      const rateB = Number(b.rate_cents_per_kwh) || 0;
-      return rateA - rateB;
-    });
+    // 2. Sorting
+    if (sortColumn) {
+      currentOffers.sort((a: any, b: any) => {
+        
+        // SPECIAL LOGIC: If sorting by Rate, prioritize Fixed plans over Variable plans
+        if (sortColumn === 'rate_cents_per_kwh') {
+             const planA = a.plan.toLowerCase().includes('fixed') ? 0 : 1;
+             const planB = b.plan.toLowerCase().includes('fixed') ? 0 : 1;
+             
+             // If plans are different types (one fixed, one variable), sort by plan type first
+             if (planA !== planB) {
+                 return sortDirection === 'asc' ? planA - planB : planB - planA;
+             }
+        }
+
+        const aValue = a[sortColumn];
+        const bValue = b[sortColumn];
+
+        // Handle number and string comparisons
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc' 
+            ? aValue.localeCompare(bValue) 
+            : bValue.localeCompare(aValue);
+        } else {
+          return sortDirection === 'asc' 
+            ? (aValue || 0) - (bValue || 0) 
+            : (bValue || 0) - (aValue || 0);
+        }
+      });
+    }
 
     return currentOffers;
-  }, [offers, commodity, selectedUtilityId]);
+  }, [offers, commodity, selectedUtilityId, sortColumn, sortDirection]);
 
   // --- CALCULATION HELPERS ---
   const calculateMonthlyCost = (offer: Offer) => {
@@ -102,6 +160,18 @@ export default function RatesPage() {
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [offers, commodity]);
+
+  // --- UI RENDERERS ---
+  const renderSortIcon = (columnKey: string) => {
+    if (sortColumn !== columnKey) {
+        // Show default icon (faded up/down)
+        return <span style={{opacity: 0.3, marginLeft: '4px'}}>▲/▼</span>;
+    }
+    // Show active direction icon
+    return sortDirection === 'asc' 
+        ? <span style={{marginLeft: '4px'}}>▲</span> // Ascending (lowest to highest)
+        : <span style={{marginLeft: '4px'}}>▼</span>; // Descending (highest to lowest)
+  };
 
   if (loading) return <div style={{ padding: 40 }}>Loading latest rates...</div>;
 
@@ -152,12 +222,18 @@ export default function RatesPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
           <thead>
             <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-              <th style={thStyle}>Utility</th>
-              <th style={thStyle}>Supplier</th>
-              <th style={thStyle}>Plan</th>
-              <th style={thStyle}>Rate</th>
+              
+              {/* SORTABLE HEADERS */}
+              {Object.entries(SORTABLE_COLUMNS).map(([header, key]) => (
+                <th key={key} style={clickableThStyle} onClick={() => handleSort(key)}>
+                  <div style={{display: 'flex', alignItems: 'center'}}>
+                    {header}
+                    {renderSortIcon(key)}
+                  </div>
+                </th>
+              ))}
+              
               <th style={thStyle}>Est. Monthly Bill</th>
-              <th style={thStyle}>Term</th>
               <th style={thStyle}>Date</th>
               <th style={thStyle}>Action</th>
             </tr>
@@ -193,7 +269,7 @@ export default function RatesPage() {
                   {offer.term_months > 0 ? `${offer.term_months} mo` : "Month-to-Month"}
                 </td>
 
-                {/* DATE COLUMN */}
+                {/* DATE COLUMN (NOT SORTABLE) */}
                 <td style={{ ...tdStyle, fontSize: "12px", color: "#9ca3af" }}>
                   {new Date(offer.day).toLocaleDateString()}
                 </td>
@@ -222,7 +298,7 @@ export default function RatesPage() {
   );
 }
 
-// --- STYLES ---
+// STYLES
 const toolbarStyle = {
   display: "flex", justifyContent: "space-between", alignItems: "center",
   background: "white", padding: "16px", borderRadius: "8px", marginBottom: "20px",
@@ -246,6 +322,7 @@ const selectStyle = { padding: "8px", borderRadius: 6, border: "1px solid #d1d5d
 const inputStyle = { padding: "8px", borderRadius: 6, border: "1px solid #93c5fd", fontSize: "14px", width: "100px", fontWeight: 600 };
 const labelStyle = { fontWeight: 600, fontSize: "14px", color: "#374151" };
 const thStyle = { padding: "12px 16px", fontSize: "12px", textTransform: 'uppercase' as const, color: "#6b7280", fontWeight: 600 };
+const clickableThStyle = { ...thStyle, cursor: 'pointer', userSelect: 'none' as const };
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
 const badgeStyle = { fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", fontWeight: 700 };
 const reminderBtnStyle = { 
