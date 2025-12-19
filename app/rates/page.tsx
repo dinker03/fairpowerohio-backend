@@ -116,7 +116,7 @@ export default function RatesPage() {
   if (loading) return <div style={{ padding: 40 }}>Loading latest rates...</div>;
 
   return (
-    <main>
+    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 16px" }}>
       <div style={{ marginBottom: 30 }}>
         <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>Current Market Rates</h1>
         <p style={{ color: "#666" }}>Live offers from Energy Choice Ohio.</p>

@@ -313,7 +313,7 @@ export default function TrendsPage() {
   const validSuppliers = meta.suppliers.filter(s => isSupplierValidForCommodity(s, commodity));
 
   return (
-    <main>
+    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 16px" }}>
       <div style={{ marginBottom: 30 }}>
         <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>Market Analytics Explorer</h1>
         <p style={{ color: "#666" }}>Compare historical pricing by supplier, utility, and rate metric.</p>
