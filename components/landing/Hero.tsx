@@ -28,7 +28,7 @@ export function Hero() {
           </h1>
 
           {/* Subheadline */}
-          <p className="text-purple-200 text-xl sm:text-2xl mb-12 max-w-3xl mx-auto">
+          <p className="text-purple-200 text-lg sm:text-xl mb-12 max-w-4xl mx-auto">
             Monitor real-time electric and gas rates across Ohio utilities. 
             Compare historical pricing trends and find the best energy deals for your home or business.
           </p>
