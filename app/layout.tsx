@@ -23,7 +23,7 @@ export default function RootLayout({
           </div>
           
           <div style={{ display: "flex", gap: "24px" }}>
-            <Link href="/" style={navLinkStyle}>📋 Current Rates</Link>
+            <Link href="/current-rates" style={navLinkStyle}>📋 Current Rates</Link>
             <Link href="/trends" style={navLinkStyle}>📊 Historical Trends</Link>
           </div>
         </nav>
