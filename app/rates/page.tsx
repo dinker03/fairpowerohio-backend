@@ -222,13 +222,31 @@ export default function RatesPage() {
 
                 {/* ACTION COLUMN */}
                 <td style={tdStyle}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     {offer.signup_url && (
-                        <a href={offer.signup_url} target="_blank" rel="noopener noreferrer" style={signUpBtnStyle} title="Go to supplier website">Sign Up ↗</a>
+                      <a
+                        href={offer.signup_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={signUpBtnStyle}
+                        title="Go to supplier website"
+                      >
+                        <span>Sign Up</span>
+                        <span style={{ fontSize: "11px" }}>↗</span>
+                      </a>
                     )}
                     
                     {offer.term_months > 0 && (
-                        <a href={generateCalendarLink(offer)} target="_blank" rel="noopener noreferrer" style={reminderBtnStyle} title="Set a calendar reminder">📅</a>
+                      <a
+                        href={generateCalendarLink(offer)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={reminderBtnStyle}
+                        title="Set a calendar reminder"
+                      >
+                        <span style={{ marginRight: 4 }}>📅</span>
+                        <span style={{ fontSize: "11px" }}>Reminder</span>
+                      </a>
                     )}
                   </div>
                 </td>
@@ -318,23 +336,29 @@ const thStyle = {
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
 const badgeStyle = { fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", fontWeight: 700 };
 const reminderBtnStyle = { 
-    fontSize: "16px", 
-    background: "transparent", 
-    color: "#374151", 
-    padding: "4px", 
-    borderRadius: "4px", 
-    textDecoration: "none", 
-    display: "inline-block",
-    cursor: "pointer"
+  fontSize: "12px",
+  background: "rgba(239,246,255,1)",
+  color: "#1e40af",
+  padding: "6px 10px",
+  borderRadius: 999,
+  textDecoration: "none" as const,
+  display: "inline-flex",
+  alignItems: "center",
+  border: "1px solid #bfdbfe",
+  cursor: "pointer",
 };
 const signUpBtnStyle = {
-    fontSize: "12px", 
-    background: "#10b981", 
-    color: "white", 
-    padding: "6px 12px", 
-    borderRadius: "6px", 
-    textDecoration: "none", 
-    fontWeight: 600,
-    display: "inline-block",
-    whiteSpace: "nowrap" as const
+  fontSize: "12px",
+  background:
+    "linear-gradient(135deg, rgba(139,92,246,1), rgba(236,72,153,1))",
+  color: "white",
+  padding: "8px 14px",
+  borderRadius: 999,
+  textDecoration: "none" as const,
+  fontWeight: 600,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  boxShadow: "0 10px 25px rgba(147,51,234,0.35)",
+  whiteSpace: "nowrap" as const,
 };
