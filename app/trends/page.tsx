@@ -37,31 +37,38 @@ export default function TrendsPage() {
     return rawData.some(r => r[keyCheck] !== undefined);
   };
 
-  // --- HELPER: Select Top 5 Cheapest Suppliers ---
+  // --- HELPER: Select Top 5 Cheapest Suppliers (Corrected) ---
   const selectTop5Suppliers = (data: any[], utilitySlug: string, currentCommodity: string) => {
     if (!data || !Array.isArray(data) || data.length === 0) return new Set<string>();
 
-    const lastDate = data[data.length - 1].date;
-    const recentData = data.filter((d: any) => d.date === lastDate);
+    // FIX: Find the latest date specifically for THIS utility, not the global last date.
+    // We reverse the array to find the most recent entry first.
+    const latestUtilityRecord = [...data].reverse().find(d => {
+        // Check if this row has ANY keys starting with the utility slug
+        return Object.keys(d).some(k => k.startsWith(`${utilitySlug}|`));
+    });
+
+    if (!latestUtilityRecord) return new Set<string>();
+
     const suppliersWithRates: { name: string, rate: number }[] = [];
     
-    if (recentData.length > 0) {
-        const dayRecord = recentData[0];
-        Object.keys(dayRecord).forEach(key => {
-            if (key.startsWith(`${utilitySlug}|`) && key.endsWith('|min')) {
-                const supplierName = key.split('|')[1];
-                const rate = dayRecord[key];
-                
-                const unitKey = `${utilitySlug}|${supplierName}|unit`;
-                const unit = dayRecord[unitKey];
-                const isElectric = unit === '¢/kWh';
+    // Use the record we found that actually has data
+    Object.keys(latestUtilityRecord).forEach(key => {
+        if (key.startsWith(`${utilitySlug}|`) && key.endsWith('|min')) {
+            const supplierName = key.split('|')[1];
+            const rate = latestUtilityRecord[key];
+            
+            const unitKey = `${utilitySlug}|${supplierName}|unit`;
+            const unit = latestUtilityRecord[unitKey];
+            
+            // Logic check: Electric uses ¢/kWh, Gas usually uses $/Mcf or $/CCF
+            const isElectric = unit === '¢/kWh';
 
-                if ((currentCommodity === 'electric' && isElectric) || (currentCommodity === 'gas' && !isElectric)) {
-                     suppliersWithRates.push({ name: supplierName, rate });
-                }
+            if ((currentCommodity === 'electric' && isElectric) || (currentCommodity === 'gas' && !isElectric)) {
+                 suppliersWithRates.push({ name: supplierName, rate });
             }
-        });
-    }
+        }
+    });
 
     suppliersWithRates.sort((a, b) => a.rate - b.rate);
     const top5 = suppliersWithRates.slice(0, 5).map(s => s.name);
@@ -166,7 +173,10 @@ export default function TrendsPage() {
         const hasData = rawData.some(row => row[dataKey] !== undefined);
         
         if (hasData) {
-            const sampleRow = rawData.find(r => r[unitKey]);
+            // FIX: Find the MOST RECENT row to check the unit, not the oldest.
+            // Old historical data might be missing unit tags.
+            const sampleRow = [...rawData].reverse().find(r => r[unitKey]);
+            
             if (sampleRow) {
                  const unit = sampleRow[unitKey];
                  const isElectric = unit === '¢/kWh';
