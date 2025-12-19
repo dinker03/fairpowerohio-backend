@@ -315,8 +315,12 @@ export default function TrendsPage() {
   return (
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 16px" }}>
       <div style={{ marginBottom: 30 }}>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>Market Analytics Explorer</h1>
-        <p style={{ color: "#666" }}>Compare historical pricing by supplier, utility, and rate metric.</p>
+        <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginBottom: 6 }}>
+          Market Analytics Explorer
+        </h1>
+        <p style={{ color: "#6b7280", fontSize: "15px" }}>
+          Compare historical pricing by supplier, utility, and rate metric using interactive charts.
+        </p>
       </div>
 
       {/* --- CONTROLS CONTAINER --- */}
@@ -409,7 +413,17 @@ export default function TrendsPage() {
       </div>
 
       {/* --- MAIN CHART --- */}
-      <div style={{ height: 450, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb", marginBottom: 40 }}>
+      <div
+        style={{
+          height: 450,
+          background: "white",
+          padding: 20,
+          borderRadius: 16,
+          border: "1px solid #e5e7eb",
+          marginBottom: 40,
+          boxShadow: "0 18px 45px rgba(15,23,42,0.08)",
+        }}
+      >
         <h3 style={{fontSize: '16px', fontWeight: 600, marginBottom: 10}}>Current Market Trends (Daily)</h3>
         <ResponsiveContainer width="100%" height="100%">
            {renderChart()}
@@ -419,7 +433,16 @@ export default function TrendsPage() {
       {/* --- HISTORY CHART SECTION --- */}
       {activeHistoryData.length > 0 && (
           <div style={{ marginTop: 40 }}>
-            <div style={{ height: 350, background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
+            <div
+              style={{
+                height: 350,
+                background: "white",
+                padding: 20,
+                borderRadius: 16,
+                border: "1px solid #e5e7eb",
+                boxShadow: "0 18px 45px rgba(15,23,42,0.08)",
+              }}
+            >
                 <h3 style={{fontSize: '16px', fontWeight: 600, marginBottom: 10}}>
                     Official Price to Compare History (2022 - Present)
                 </h3>
@@ -474,13 +497,58 @@ export default function TrendsPage() {
 }
 
 // --- STYLES ---
-const controlPanelStyle = { background: "white", padding: "20px", borderRadius: "8px", border: "1px solid #e5e7eb", marginBottom: "30px" };
+const controlPanelStyle = {
+  background: "white",
+  padding: "20px",
+  borderRadius: 16,
+  border: "1px solid #e5e7eb",
+  marginBottom: 30,
+  boxShadow: "0 14px 35px rgba(15,23,42,0.06)",
+};
 const groupStyle = { display: "flex", alignItems: "center", gap: "10px" };
-const toggleGroupStyle = { display: "flex", background: "#f3f4f6", padding: "4px", borderRadius: "6px", gap: "2px" };
-const labelStyle = { fontSize: "13px", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" as const };
+const toggleGroupStyle = {
+  display: "flex",
+  background: "#f3e8ff",
+  padding: "4px",
+  borderRadius: 999,
+  gap: "4px",
+};
+const labelStyle = {
+  fontSize: "13px",
+  fontWeight: 600,
+  color: "#6b7280",
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.5,
+};
 const sectionHeaderStyle = { fontSize: "14px", fontWeight: 600, marginBottom: "10px", color: "#111" };
 const scrollListStyle = { maxHeight: "200px", overflowY: "auto" as const, border: "1px solid #e5e7eb", borderRadius: "6px", padding: "10px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" };
 const checkboxLabelStyle = { display: "flex", gap: "8px", alignItems: "center", cursor: "pointer", userSelect: "none" as const };
-const activeBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "#3b82f6", color: "white", fontWeight: 600, cursor: "pointer", fontSize: "13px" };
-const inactiveBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "transparent", color: "#4b5563", cursor: "pointer", fontSize: "13px" };
-const textBtnStyle = { background: 'none', border: 'none', color: '#3b82f6', fontSize: '12px', cursor: 'pointer', fontWeight: 500, padding: '0' };
+const activeBtn = {
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: "none",
+  background:
+    "linear-gradient(135deg, rgba(139,92,246,1), rgba(236,72,153,1))",
+  color: "white",
+  fontWeight: 600,
+  cursor: "pointer",
+  fontSize: "13px",
+};
+const inactiveBtn = {
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: "none",
+  background: "transparent",
+  color: "#4b5563",
+  cursor: "pointer",
+  fontSize: "13px",
+};
+const textBtnStyle = {
+  background: "none",
+  border: "none",
+  color: "#4f46e5",
+  fontSize: "12px",
+  cursor: "pointer",
+  fontWeight: 500,
+  padding: 0,
+};

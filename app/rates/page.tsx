@@ -118,8 +118,12 @@ export default function RatesPage() {
   return (
     <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 16px" }}>
       <div style={{ marginBottom: 30 }}>
-        <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#111" }}>Current Market Rates</h1>
-        <p style={{ color: "#666" }}>Live offers from Energy Choice Ohio.</p>
+        <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#111827", marginBottom: 6 }}>
+          Current Market Rates
+        </h1>
+        <p style={{ color: "#6b7280", fontSize: "15px" }}>
+          Live offers from Energy Choice Ohio with smart filters to help you compare rates quickly.
+        </p>
       </div>
 
       {/* TOOLBAR */}
@@ -158,7 +162,15 @@ export default function RatesPage() {
       </div>
 
       {/* TABLE */}
-      <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8, background: "white" }}>
+      <div
+        style={{
+          overflowX: "auto",
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          background: "white",
+          boxShadow: "0 18px 45px rgba(15,23,42,0.08)",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
           <thead>
             <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
@@ -234,28 +246,75 @@ export default function RatesPage() {
 
 // STYLES
 const toolbarStyle = {
-  display: "flex", justifyContent: "space-between", alignItems: "center",
-  background: "white", padding: "16px", borderRadius: "8px", marginBottom: "20px",
-  border: "1px solid #e5e7eb", flexWrap: "wrap" as const, gap: "15px"
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  background: "white",
+  padding: "16px 20px",
+  borderRadius: 16,
+  marginBottom: 20,
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 14px 35px rgba(15,23,42,0.06)",
+  flexWrap: "wrap" as const,
+  gap: 15,
 };
 const groupStyle = {
   display: "flex", 
   alignItems: "center", 
   gap: "12px" 
 }; 
-const toggleGroupStyle = { 
-  display: "flex", 
-  background: "#e5e7eb", 
-  padding: 4, 
-  borderRadius: 6, 
-  gap: 2 
+const toggleGroupStyle = {
+  display: "flex",
+  background: "#f3e8ff",
+  padding: 4,
+  borderRadius: 999,
+  gap: 4,
 };
-const activeBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "#3b82f6", color: "white", fontWeight: 600, cursor: "pointer" };
-const inactiveBtn = { padding: "6px 12px", borderRadius: 4, border: "none", background: "transparent", color: "#4b5563", cursor: "pointer" };
-const selectStyle = { padding: "8px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: "14px", minWidth: 200, cursor: "pointer" };
+const activeBtn = {
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: "none",
+  background:
+    "linear-gradient(135deg, rgba(139,92,246,1), rgba(236,72,153,1))",
+  color: "white",
+  fontWeight: 600,
+  cursor: "pointer",
+  fontSize: "13px",
+};
+const inactiveBtn = {
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: "none",
+  background: "transparent",
+  color: "#6b7280",
+  cursor: "pointer",
+  fontSize: "13px",
+};
+const selectStyle = {
+  padding: "8px 12px",
+  borderRadius: 999,
+  border: "1px solid #d1d5db",
+  fontSize: "14px",
+  minWidth: 220,
+  cursor: "pointer",
+  background: "#f9fafb",
+};
 const inputStyle = { padding: "8px", borderRadius: 6, border: "1px solid #93c5fd", fontSize: "14px", width: "100px", fontWeight: 600 };
-const labelStyle = { fontWeight: 600, fontSize: "14px", color: "#374151" };
-const thStyle = { padding: "12px 16px", fontSize: "12px", textTransform: 'uppercase' as const, color: "#6b7280", fontWeight: 600 };
+const labelStyle = {
+  fontWeight: 600,
+  fontSize: "13px",
+  color: "#6b7280",
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.5,
+};
+const thStyle = {
+  padding: "12px 16px",
+  fontSize: "11px",
+  textTransform: "uppercase" as const,
+  color: "#6b7280",
+  fontWeight: 600,
+  letterSpacing: 0.5,
+};
 const tdStyle = { padding: "14px 16px", fontSize: "14px", color: "#4b5563" };
 const badgeStyle = { fontSize: "9px", background: "#dbeafe", color: "#1e40af", padding: "2px 4px", borderRadius: "4px", fontWeight: 700 };
 const reminderBtnStyle = { 
