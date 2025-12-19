@@ -17,12 +17,13 @@ export default function RootLayout({
         
         {/* SHARED NAVIGATION BAR */}
         <nav style={{ background: "#ffffff", borderBottom: "1px solid #e5e7eb", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "12px", textDecoration: "none" }}>
             <span style={{ fontSize: "20px" }}>⚡️</span>
             <span style={{ fontWeight: 700, fontSize: "18px", color: "#111827" }}>Fair Energy Ohio</span>
-          </div>
+          </Link>
           
           <div style={{ display: "flex", gap: "24px" }}>
+            <Link href="/" style={navLinkStyle}>🏠 Home</Link>
             <Link href="/current-rates" style={navLinkStyle}>📋 Current Rates</Link>
             <Link href="/trends" style={navLinkStyle}>📊 Historical Trends</Link>
           </div>
