@@ -22,8 +22,8 @@ export default function TrendsPage() {
   const [commodity, setCommodity] = useState<"electric" | "gas">("electric");
   const [metric, setMetric] = useState<"min" | "avg" | "median" | "max">("min");
   
-  // Set default chart type to 'bar'
-  const [chartType, setChartType] = useState<"line" | "bar" | "area" | "stacked">("bar");
+  // Chart type: keep UI simple with Line & Bar only
+  const [chartType, setChartType] = useState<"line" | "bar">("bar");
   const [showFilters, setShowFilters] = useState(true);
   
   // Multi-select state
@@ -224,16 +224,48 @@ export default function TrendsPage() {
         .sort((a: any, b: any) => a.date.localeCompare(b.date));
   }, [historyData, selectedUtility]);
 
-  // --- 5. CUSTOM TOOLTIP ---
+  // --- 5. CUSTOM TOOLTIP (Home-page style) ---
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const sorted = [...payload].sort((a: any, b: any) => Number(a.value) - Number(b.value));
+      const sorted = [...payload].sort(
+        (a: any, b: any) => Number(a.value) - Number(b.value)
+      );
       return (
-        <div style={{ background: 'white', padding: '10px', border: '1px solid #ccc', fontSize: '12px', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: '5px', borderBottom: '1px solid #eee', paddingBottom: '3px' }}>{label}</p>
+        <div
+          style={{
+            background: "white",
+            padding: "10px 12px",
+            border: "1px solid #e5e7eb",
+            fontSize: "12px",
+            borderRadius: "8px",
+            boxShadow: "0 10px 20px rgba(15,23,42,0.12)",
+            minWidth: 140,
+          }}
+        >
+          <p
+            style={{
+              fontWeight: 600,
+              marginBottom: 6,
+              borderBottom: "1px solid #f3f4f6",
+              paddingBottom: 4,
+              color: "#111827",
+            }}
+          >
+            {label}
+          </p>
           {sorted.map((entry: any, index: number) => (
-            <div key={index} style={{ color: entry.color, marginBottom: '3px' }}>
-              <span style={{fontWeight: 600}}>{entry.name}:</span> {entry.value}
+            <div
+              key={index}
+              style={{
+                color: entry.color,
+                marginBottom: 4,
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{entry.name}</span>
+              <span style={{ color: "#111827" }}>{entry.value}</span>
             </div>
           ))}
         </div>
@@ -242,20 +274,53 @@ export default function TrendsPage() {
     return null;
   };
 
-  // --- 6. RENDER CHART COMPONENT ---
+  // --- 6. RENDER CHART COMPONENT (with gradients / polished styles) ---
   const renderChart = () => {
     const commonProps = {
         data: rawData,
         margin: { top: 10, right: 30, left: 0, bottom: 0 }
     };
 
+    const gradientDefs = chartLines.map((line) => (
+      <linearGradient
+        key={line.dataKey}
+        id={`grad-${line.dataKey}`}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
+        <stop offset="5%" stopColor={line.color} stopOpacity={0.3} />
+        <stop offset="95%" stopColor={line.color} stopOpacity={0} />
+      </linearGradient>
+    ));
+
     const axes = (
         <>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis domain={["auto", "auto"]} unit={commodity === "electric" ? "¢" : "$"} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis
+              dataKey="date"
+              stroke="#9ca3af"
+              tickLine={false}
+              axisLine={false}
+              style={{ fontSize: "12px" }}
+            />
+            <YAxis
+              domain={["auto", "auto"]}
+              unit={commodity === "electric" ? "¢" : "$"}
+              stroke="#9ca3af"
+              tickLine={false}
+              axisLine={false}
+              style={{ fontSize: "12px" }}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ stroke: "#e5e7eb", strokeWidth: 1 }}
+            />
+            <Legend
+              iconType="circle"
+              wrapperStyle={{ fontSize: "12px", paddingTop: 8 }}
+            />
         </>
     );
 
@@ -264,41 +329,35 @@ export default function TrendsPage() {
             <BarChart {...commonProps}>
                 {axes}
                 {chartLines.map(line => (
-                    <Bar key={line.dataKey} dataKey={line.dataKey} fill={line.color} name={line.name} />
+                    <Bar
+                      key={line.dataKey}
+                      dataKey={line.dataKey}
+                      fill={line.color}
+                      name={line.name}
+                      radius={[8, 8, 0, 0]}
+                    />
                 ))}
             </BarChart>
         );
     }
     
-    if (chartType === 'area') {
-        return (
-            <AreaChart {...commonProps}>
-                {axes}
-                {chartLines.map(line => (
-                    <Area key={line.dataKey} type="monotone" dataKey={line.dataKey} stroke={line.color} fill={line.color} fillOpacity={0.3} name={line.name} />
-                ))}
-            </AreaChart>
-        );
-    }
-
-    if (chartType === 'stacked') {
-        return (
-             <BarChart {...commonProps}>
-                {axes}
-                {chartLines.map(line => (
-                    <Bar key={line.dataKey} dataKey={line.dataKey} stackId="a" fill={line.color} name={line.name} />
-                ))}
-            </BarChart>
-        );
-    }
-
+    // Default: line chart
     return (
-        <LineChart {...commonProps}>
-            {axes}
-            {chartLines.map(line => (
-                <Line key={line.dataKey} type="monotone" dataKey={line.dataKey} stroke={line.color} name={line.name} strokeWidth={2} dot={false} connectNulls={true} />
-            ))}
-        </LineChart>
+      <LineChart {...commonProps}>
+        {axes}
+        {chartLines.map((line) => (
+          <Line
+            key={line.dataKey}
+            type="monotone"
+            dataKey={line.dataKey}
+            stroke={line.color}
+            name={line.name}
+            strokeWidth={2.5}
+            dot={false}
+            connectNulls={true}
+          />
+        ))}
+      </LineChart>
     );
   };
 
@@ -351,13 +410,11 @@ export default function TrendsPage() {
                 <span style={labelStyle}>Chart Type:</span>
                 <select 
                     value={chartType} 
-                    onChange={(e) => setChartType(e.target.value as any)}
+                    onChange={(e) => setChartType(e.target.value as "line" | "bar")}
                     style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', cursor: 'pointer' }}
                 >
                     <option value="line">Line Chart</option>
                     <option value="bar">Bar Chart</option>
-                    <option value="area">Area Chart</option>
-                    <option value="stacked">Stacked Bar</option>
                 </select>
             </div>
 
