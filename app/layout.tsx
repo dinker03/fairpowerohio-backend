@@ -2,8 +2,11 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata = {
-  title: "Fair Energy Ohio Admin",
-  description: "Internal dashboard for monitoring energy rates",
+  title: "Fair Energy Ohio",
+  description: "Track Ohio energy rates, compare suppliers, and explore market trends.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
